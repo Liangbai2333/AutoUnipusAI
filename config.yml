@@ -1,0 +1,23 @@
+selenium:
+  browser: "chrome"
+  headless: false
+  implicit_wait: 1
+
+ai:
+  model: "deepseek-chat"
+  openai_api_key: ${DEEPSEEK_API_KEY}
+  openai_api_base: "https://api.deepseek.com/v1"
+
+unipus:
+  username: ${UNIPUS_USERNAME}
+  password: ${UNIPUS_PASSWORD}
+  book: "20000057510"
+  offset: 5
+  page_wait: 5
+  tab_wait: 3
+  task_wait: 3
+  video_sleep: 5
+
+logging:
+  level: "INFO"
+  file: "logs/app.log"
