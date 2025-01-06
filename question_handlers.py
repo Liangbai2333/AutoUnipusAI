@@ -278,7 +278,17 @@ class GeneralChoiceHandler(BaseHandler):
         click_button(self.driver, "div.question-common-course-page>a.btn")
         return valid_choices
 
-class MediaBlankFillingHandler(BaseHandler):
+class GeneralBlankFillingHandler(BaseHandler, ABC):
+    def _fill_blanks(self, answers):
+        input_fields = self.driver.find_elements(By.CSS_SELECTOR, 'div.comp-scoop-reply input')
+        for index, answer in enumerate(answers):
+            logger.info(f"填词第{index + 1}处填写: {answer}")
+            if index > len(input_fields) - 1:
+                break
+            input_fields[index].clear()
+            input_fields[index].send_keys(answer)
+
+class MediaBlankFillingHandler(GeneralBlankFillingHandler):
     @abstractmethod
     def _get_plain_text(self) -> str:
         pass
@@ -316,13 +326,7 @@ class MediaBlankFillingHandler(BaseHandler):
             }
         )
         answers = response.blanks
-        input_fields = self.driver.find_elements(By.CSS_SELECTOR, 'div.comp-scoop-reply input')
-        for index, answer in enumerate(answers):
-            logger.info(f"填词第{index + 1}处填写: {answer}")
-            if index > len(input_fields) - 1:
-                break
-            input_fields[index].clear()
-            input_fields[index].send_keys(answer)
+        super()._fill_blanks(answers)
         click_button(self.driver, "div.question-common-course-page>a.btn")
         return answers
 
@@ -468,7 +472,6 @@ class VideoWatchHandler(BaseHandler):
             self.driver.execute_script("arguments[0].play();", video)
             time.sleep(float(config["unipus"]["video_sleep"]))
 
-
 class ArticleWithChoiceHandler(GeneralChoiceHandler):
     def _get_plain_text(self) -> str:
         text_soup = BeautifulSoup(
@@ -483,9 +486,40 @@ class ArticleWithChoiceHandler(GeneralChoiceHandler):
 
         return True
 
-class WordCorrectionHandler(BaseHandler):
+class WordCorrectionHandler(GeneralBlankFillingHandler):
+    def _post_handle(self, answers) -> bool:
+        if self._check_score_with_retry(answers):
+            logger.info(f"完成本次词汇纠正答题, 最终分数: {self.score}")
+        else:
+            logger.info(f"本次词汇纠正答题失败, 最终分数: {self.score}")
+
+        return True
+
     def _internal_handle(self):
-        logger.info("暂不支持处理该类型，跳过")
+        text_wrapper = self.driver.find_element(By.CSS_SELECTOR, "div.question-common-abs-scoop>div>div")
+        text_soup = BeautifulSoup(text_wrapper.get_attribute("outerHTML"), 'lxml')
+        for span in text_soup.select("span.fe-scoop"):
+            span.replace_with('___')
+        text = text_soup.get_text(separator="\n")
+        prompt = ChatPromptTemplate.from_template(
+            """
+            根据下列内容，将文本内的下划线(___)替换为后面括号内正确的单词，并使用正确的单词形式, 并按照顺序返回单词列表
+            其他提示通常为错误的答案提示，不可完全重复了
+            内容:
+            {content}
+            其他提示: {retry_message}
+            """
+        )
+        chain = prompt | chat.with_structured_output(WordCorrectionAnswer)
+        response = chain.invoke(
+            {
+                'content': text,
+                'retry_message': self.retry_messages,
+            }
+        )
+        answers = response.blanks
+        super()._fill_blanks(answers)
+        click_button(self.driver, "div.question-common-course-page>a.btn")
 
 def find_handler(driver: WebDriver) -> Optional[BaseHandler]:
     set_timeout = False

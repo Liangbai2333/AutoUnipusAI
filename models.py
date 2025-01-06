@@ -21,6 +21,6 @@ class VideoWithBlankFillingAnswer(BaseModel):
 class IdeaWithAudioOrVideoAnswer(BaseModel):
     answers: list[str]
 class WordCorrectionAnswer(BaseModel):
-    words: list[str]
+    blanks: list[str]
 class IdeaWithPassageAnswer(BaseModel):
     answers: list[str]
