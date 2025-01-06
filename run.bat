@@ -1,26 +1,26 @@
 @echo off
-REM æ£€æŸ¥è™šæ‹ŸçŽ¯å¢ƒæ˜¯å¦å­˜åœ¨
+REM ¼ì²éÐéÄâ»·¾³ÊÇ·ñ´æÔÚ
 if not exist ".venv\Scripts\python.exe" (
-    echo è™šæ‹ŸçŽ¯å¢ƒä¸å­˜åœ¨ï¼Œæ­£åœ¨åˆ›å»º...
+    echo ÐéÄâ»·¾³²»´æÔÚ£¬ÕýÔÚ´´½¨...
     python -m venv .venv
-    echo è™šæ‹ŸçŽ¯å¢ƒåˆ›å»ºå®Œæˆã€‚
+    echo ÐéÄâ»·¾³´´½¨Íê³É¡£
 )
 
-REM æ¿€æ´»è™šæ‹ŸçŽ¯å¢ƒ
+REM ¼¤»îÐéÄâ»·¾³
 call .venv\Scripts\activate
 
-REM æ£€æŸ¥å¹¶å®‰è£…ä¾èµ–
+REM ¼ì²é²¢°²×°ÒÀÀµ
 if exist "requirements.txt" (
-    echo æ­£åœ¨å®‰è£…ä¾èµ–...
+    echo ÕýÔÚ°²×°ÒÀÀµ...
     pip install -r requirements.txt
-    echo ä¾èµ–å®‰è£…å®Œæˆã€‚
+    echo ÒÀÀµ°²×°Íê³É¡£
 ) else (
-    echo requirements.txt æ–‡ä»¶ä¸å­˜åœ¨ï¼Œè·³è¿‡ä¾èµ–å®‰è£…ã€‚
+    echo requirements.txt ÎÄ¼þ²»´æÔÚ£¬Ìø¹ýÒÀÀµ°²×°¡£
 )
 
-REM è¿è¡Œä¸»ç¨‹åº
-echo æ­£åœ¨è¿è¡Œä¸»ç¨‹åº...
+REM ÔËÐÐÖ÷³ÌÐò
+echo ÕýÔÚÔËÐÐÖ÷³ÌÐò...
 python main.py
 
-REM ä¿æŒç»ˆç«¯çª—å£æ‰“å¼€ï¼ˆå¯é€‰ï¼‰
+REM ±£³ÖÖÕ¶Ë´°¿Ú´ò¿ª£¨¿ÉÑ¡£©
 pause

@@ -7,9 +7,8 @@ langchain-openai~=0.2.14
 lxml~=5.3.0
 beautifulsoup4~=4.12.3
 langchain~=0.3.14
-langchain-core~=0.3.29
 requests~=2.32.3
 tqdm~=4.67.1
-openai-whisper~=20240930
+openai-whisper==20240930
 moviepy~=2.1.1
 torch~=2.5.1
