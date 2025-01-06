@@ -24,7 +24,7 @@ def using_cached_file(suffix, save_dir=".cache") -> str:
     atexit.register(cleanup_downloaded_file, save_path)
     return save_path
 
-def download_file(url, suffix, save_dir=".cache") -> str:
+def download_cache_file(url, suffix, save_dir=".cache") -> str:
     """
     下载文件并显示进度条，使用随机文件名
 
@@ -38,27 +38,30 @@ def download_file(url, suffix, save_dir=".cache") -> str:
         logger.info(f"URL 已缓存，直接返回文件: {url_to_file_cache[url]}")
         return url_to_file_cache[url]
 
-    # 创建保存目录
-    os.makedirs(save_dir, exist_ok=True)
-
     # 生成随机文件名（使用 UUID）
     file_name = str(uuid.uuid4()) + "." + suffix  # 例如：f47ac10b-58cc-4372-a567-0e02b2c3d479.tmp
-    save_path = os.path.join(save_dir, file_name)
-
+    # 下载文件
+    save_path = download_file(url, save_dir, file_name)
     # 注册清理函数
     atexit.register(cleanup_downloaded_file, save_path)
+    url_to_file_cache[url] = save_path
+    return save_path
 
+def download_file(url, save_dir, file_name) -> str:
+    # 创建保存目录
+    os.makedirs(save_dir, exist_ok=True)
     # 发起请求，获取文件信息
     response = requests.get(url, stream=True)
     total_size = int(response.headers.get("content-length", 0))  # 获取文件总大小
+    save_path = os.path.join(save_dir, file_name)
 
     # 使用 tqdm 显示进度条
     with open(save_path, "wb") as file, tqdm(
-        desc=file_name,  # 进度条描述（文件名）
-        total=total_size,  # 总大小
-        unit="B",  # 单位
-        unit_scale=True,  # 自动缩放单位（如 KB、MB）
-        unit_divisor=1024,  # 单位除数
+            desc=file_name,  # 进度条描述（文件名）
+            total=total_size,  # 总大小
+            unit="B",  # 单位
+            unit_scale=True,  # 自动缩放单位（如 KB、MB）
+            unit_divisor=1024,  # 单位除数
     ) as pbar:
         for chunk in response.iter_content(chunk_size=1024):  # 分块下载
             if chunk:
@@ -66,6 +69,4 @@ def download_file(url, suffix, save_dir=".cache") -> str:
                 pbar.update(len(chunk))  # 更新进度条
 
     logger.info(f"文件已下载到: {save_path}")
-    # 将 URL 和文件路径缓存到字典中
-    url_to_file_cache[url] = save_path
     return save_path

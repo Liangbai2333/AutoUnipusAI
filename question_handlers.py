@@ -54,14 +54,14 @@ class BaseHandler:
     def _parse_audio_text(self):
         audio_field = self.driver.find_element(By.CSS_SELECTOR, "div.audio-material-wrapper>div>audio.unipus-audio-h5")
         download_url = audio_field.get_attribute("src")
-        audio_file_path = download.download_file(download_url, "mp3")
+        audio_file_path = download.download_cache_file(download_url, "mp3")
         text = audio_parser.from_audio(audio_file_path)
         return text
 
     def _parse_video_text(self):
         video_field = self.driver.find_element(By.CSS_SELECTOR, "div.video-material-wrapper video")
         download_url = video_field.get_attribute("src")
-        video_file_path = download.download_file(download_url, "mp4")
+        video_file_path = download.download_cache_file(download_url, "mp4")
         text = audio_parser.from_video(video_file_path)
         return text
 

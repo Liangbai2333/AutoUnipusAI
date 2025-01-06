@@ -67,7 +67,7 @@ def access_book_pages(driver, book: Optional[str] = None):
     if not book:
         book = config['unipus']['book']
     logger.info(f"准备书籍{book}阅读界面")
-    driver.get("https://ucloud.unipus.cn/app/cmgt/resource-detail/20000057510")
+    driver.get(f"https://ucloud.unipus.cn/app/cmgt/resource-detail/{book}")
     time.sleep(1)
     click_button(driver, "button.ant-btn.ant-btn-default.courses-info_buttonLayer1__Mtel4 span")
     click_button(driver,"div.know-box span.iKnow")

@@ -23,7 +23,7 @@ def from_audio(audio_path, language_t="en") -> str:
         return path_to_audio_cache[audio_path]
     device = "cuda" if torch.cuda.is_available() else "cpu"
     logger.info(f"Using device: {device}")
-    model = whisper.load_model("base").to(device)
+    model = whisper.load_model("base", download_root="./models").to(device)
     fp16 = device == "cuda"
     result = model.transcribe(audio_path, language=language_t, fp16=fp16)
     text = result["text"]
