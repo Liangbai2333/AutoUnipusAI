@@ -3,3 +3,4 @@ logs
 .idea
 .cache
 __pycache__
+models

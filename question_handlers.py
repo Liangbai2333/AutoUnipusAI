@@ -124,6 +124,7 @@ class BaseHandler:
         except TimeoutException:
             if self.retry < 2:
                 logger.info("正确率低于60%, 返回重做")
+                click_button(self.driver, "button.ant-btn.ant-btn-primary span", 1)
                 if not self.__click_button_with_answer("div.question-common-course-page>a.btn"):
                     return True
                 click_button(self.driver, "button.ant-btn.ant-btn-primary span", 1)
@@ -503,7 +504,7 @@ class WordCorrectionHandler(GeneralBlankFillingHandler):
         text = text_soup.get_text(separator="\n")
         prompt = ChatPromptTemplate.from_template(
             """
-            根据下列内容，将文本内的下划线(___)替换为后面括号内正确的单词，并使用正确的单词形式, 并按照顺序返回单词列表
+            根据下列内容，将文本内的下划线(___)替换为后面括号内正确的英文单词，并使用正确的英文单词形式, 并按照顺序返回英文单词列表
             其他提示通常为错误的答案提示，不可完全重复了
             内容:
             {content}
@@ -531,13 +532,15 @@ def find_handler(driver: WebDriver) -> Optional[BaseHandler]:
         if find_element_safely(driver, "div.layout-container.discussion-view"):
             logger.info("发现讨论题处理器")
             return DiscussionHandler(driver)
-        if find_element_safely(driver, "div.audio-material-wrapper") and find_element_safely(driver, "div.comp-scoop-reply"):
+        if find_element_safely(driver, "div.audio-material-wrapper") and find_element_safely(driver, "div.comp-scoop-reply")\
+            and not find_element_safely(driver, "div.comp-scoop-reply-dropdown-selection-overflow"):
             logger.info("发现音频填空题处理器")
             return AudioWithBlankFillingHandler(driver)
         if find_element_safely(driver, "div.audio-material-wrapper") and find_element_safely(driver,"div.question-common-abs-choice"):
             logger.info("发现音频选择题处理器")
             return AudioWithChoiceHandler(driver)
-        if find_element_safely(driver, "div.video-material-wrapper") and find_element_safely(driver, "div.comp-scoop-reply"):
+        if find_element_safely(driver, "div.video-material-wrapper") and find_element_safely(driver, "div.comp-scoop-reply") \
+                and not find_element_safely(driver, "div.comp-scoop-reply-dropdown-selection-overflow"):
             logger.info("发现视频填空题处理器")
             return VideoWithBlankFillingHandler(driver)
         if find_element_safely(driver, "div.video-material-wrapper") and find_element_safely(driver,"div.question-common-abs-choice"):

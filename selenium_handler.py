@@ -2,6 +2,8 @@ import time
 from time import sleep
 from typing import Optional
 
+from selenium.common import TimeoutException
+
 from config import config
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -115,21 +117,24 @@ def auto_answer_questions(driver, page_name: str):
                     logger.info(f"进入第{index_task + 1}个任务: {task.text}")
                 task.click()
                 click_button(driver, "button.ant-btn.ant-btn-primary span", 1)
-                WebDriverWait(driver, 30).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.layout-container"))
-                )
-                handler = find_handler(driver)
-                if handler:
-                    try:
-                        if not handler.handle():
-                            if retry < 2:
-                                access_internal_with_retry(retry + 1)
+                try:
+                    WebDriverWait(driver, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.layout-container"))
+                    )
+                    handler = find_handler(driver)
+                    if handler:
+                        try:
+                            if not handler.handle():
+                                if retry < 2:
+                                    access_internal_with_retry(retry + 1)
+                                else:
+                                    logger.info("做题失败")
                             else:
-                                logger.info("做题失败")
-                        else:
-                            logger.info("做题完成，进入下一题")
-                    except Exception as e:
-                        logger.warning(f"处理问题时遇到错误", exc_info=e)
+                                logger.info("做题完成，进入下一题")
+                        except Exception as e:
+                            logger.warning(f"处理问题时遇到错误", exc_info=e)
+                except TimeoutException:
+                    logger.info("不支持处理的页面")
 
             access_internal_with_retry(0)
             time.sleep(float(config['unipus']['task_wait']))
