@@ -89,7 +89,7 @@ class BaseHandler:
             button = WebDriverWait(self.driver, wait_time).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
             )
-            if button.text and button.text == '查看答题小结':
+            if button.text and (button.text == '查看答题小结' or button.text == "继续学习" or button.text == "继续任务"):
                 return False
             button.click()
             return True
@@ -369,11 +369,11 @@ class IdeaWithAudioOrVideoHandler(IdeaWithInputHandler):
 
     def _internal_handle(self) -> list[str]:
         tip_list = self._extract_tips()
-        audio = find_element_safely(self.driver, "div.video-material-wrapper")
-        if audio:
-            content = self._parse_audio_text()
-        else:
+        video = find_element_safely(self.driver, "div.video-material-wrapper")
+        if video:
             content = self._parse_video_text()
+        else:
+            content = self._parse_audio_text()
         questions = self.driver.find_elements(By.CSS_SELECTOR, "div.question-inputbox")
         question_list = []
         for question in questions:
