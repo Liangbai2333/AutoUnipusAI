@@ -2,7 +2,7 @@ import time
 from abc import abstractmethod, ABC
 from typing import Union
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString, Tag
 from langchain_core.prompts import ChatPromptTemplate
 from selenium.common import TimeoutException
 from selenium.webdriver.chrome.webdriver import WebDriver
@@ -296,14 +296,27 @@ class MediaBlankFillingHandler(GeneralBlankFillingHandler):
 
     def _internal_handle(self) -> list[str]:
         tip_list = self._extract_tips()
-        areas = self.driver.find_elements(By.CSS_SELECTOR, 'div[autodiv="already"]')
+        areas: list[WebElement] = self.driver.find_elements(By.CSS_SELECTOR, 'div[autodiv="already"]')
         if not areas:
-            areas = self.driver.find_elements(By.CSS_SELECTOR, 'div.comp-scoop-reply p')
+            areas: list[WebElement] = self.driver.find_elements(By.CSS_SELECTOR, 'div.comp-scoop-reply p')
         text_with_blanks = []
         for area in areas:
             soup = BeautifulSoup(area.get_attribute("outerHTML"), 'lxml')
-            question_text = soup.get_text()
-            text_with_blanks.append(question_text)
+            text_area = ""
+            for child in soup.p.children:
+                if isinstance(child, NavigableString):
+                    text_area += child.text
+                else:
+                    child: Tag
+                    _class: list[str] = child.get("class")
+                    if not _class:
+                        continue
+                    index = int(child.get("data-scoop-index", "-1"))
+                    if "fe-scoop" in _class and index >= 0:
+                        text_area += f"{index + 1})___"
+            #
+            # question_text = soup.get_text()
+            # text_with_blanks.append(question_text)
         prompt = ChatPromptTemplate.from_template(
             """
             根据下列内容与提示推断 文本内n)处(如1), 2), 3))应填写什么正确的单词形式, 并按照顺序返回单词列表
