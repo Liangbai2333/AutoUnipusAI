@@ -17,8 +17,8 @@ def get_chat_model():
     logger.info(f"初始化大模型 {config['ai']['model']}")
     return ChatOpenAI(
         model=config['ai']['model'],
-        openai_api_key=config['ai']['openai_api_key'],
-        openai_api_base=config['ai']['openai_api_base']
+        openai_api_key=config['ai']['openai_api_key'].strip(),
+        openai_api_base=config['ai']['openai_api_base'].strip()
     )
 
 chat = get_chat_model()

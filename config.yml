@@ -5,14 +5,14 @@ selenium:
 
 ai:
   model: "deepseek-chat" #模型名
-  openai_api_key: {DEEPSEEK_API_KEY} #API-KEY
+  openai_api_key: ${DEEPSEEK_API_KEY} #API-KEY
   openai_api_base: "https://api.deepseek.com/v1"
 
 unipus:
   username: ${UNIPUS_USERNAME} #U校园账号
   password: ${UNIPUS_PASSWORD} #U校园密码
-  book: "20000057510" #图书ID
-  offset: 40 #一开始的页面往后查找多少页
+  book: "20000438203" #图书ID
+  offset: 1 #一开始的页面往后查找多少页
   page_wait: 5 #页面做完后等待多久
   tab_wait: 3 #栏目做完后等待多久
   task_wait: 3 #任务做完后等待多久

@@ -299,10 +299,9 @@ class MediaBlankFillingHandler(GeneralBlankFillingHandler):
         areas: list[WebElement] = self.driver.find_elements(By.CSS_SELECTOR, 'div[autodiv="already"]')
         if not areas:
             areas: list[WebElement] = self.driver.find_elements(By.CSS_SELECTOR, 'div.comp-scoop-reply p')
-        text_with_blanks = []
+        text_area = ""
         for area in areas:
             soup = BeautifulSoup(area.get_attribute("outerHTML"), 'lxml')
-            text_area = ""
             for child in soup.p.children:
                 if isinstance(child, NavigableString):
                     text_area += child.text
@@ -335,7 +334,7 @@ class MediaBlankFillingHandler(GeneralBlankFillingHandler):
             {
                 'content': self._get_plain_text(),
                 'tips': tip_list,
-                'paragraph': text_with_blanks,
+                'paragraph': text_area,
                 'retry_message': self.retry_messages,
             }
         )
