@@ -64,7 +64,8 @@ class BaseHandler:
             button = WebDriverWait(driver, wait_time).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
             )
-            if button.text and (button.text == '查看答题小结' or button.text == "继续学习" or button.text == "继续任务"):
+            button_text =  button.text.strip() if button.text else None
+            if button_text and (button_text == '查看答题小结' or button_text == "继续学习" or button_text == "继续任务"):
                 return False
             button.click()
             return True

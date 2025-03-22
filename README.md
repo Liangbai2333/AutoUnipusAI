@@ -17,12 +17,19 @@
 ## 使用方式
 
 ### 1. 安装Python环境
-前往官网安装: **https://www.python.org/downloads/windows/**
-### 2. (可选) 安装ffmpeg依赖
-前往官网安装: **https://ffmpeg.org/download.html#build-windows**  
+前往官网安装: **https://www.python.org/downloads**
+
+或者直接安装Conda
+
+**请将其配置到环境变量中**
+
+### 2. 安装ffmpeg依赖
+前往官网安装: **https://ffmpeg.org/download.html **
 若未安装, 程序将自动下载到本地工作目录
+
 ### 3. 申请一个支持工具调用的大模型的API-KEY
 你可以直接申请Deepseek的API-KEY: **https://www.deepseek.com/**
+
 ### 4. 配置config.yml中的配置项
 ```yaml
 ai:
@@ -40,7 +47,15 @@ unipus:
   task_wait: 3
   video_sleep: 5
 ```
-### 5. 自行构建Python虚拟环境或直接运行目录中的 run.bat
+### 5. 配置虚拟环境，安装必要的依赖
+
+1. 在AutoUnipusAI目录下打开终端(windows/macOS)或cmd(windows)
+2. 输入命令 python -m venv .venv
+3. 激活虚拟环境 
+   * windows: .venv/Scripts/activate
+   * macOS: source .venv/bin/activate
+4. 安装依赖 pip install -r requirements.txt
+5. 执行python main.py
 
 ## 注意事项
 * ### 若显卡支持CUDA, 请配置完CUDA再使用, 可加速音视频转文字的计算速度 (默认使用CPU计算)
