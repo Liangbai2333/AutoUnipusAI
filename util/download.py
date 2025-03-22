@@ -4,7 +4,7 @@ import os
 import atexit
 import uuid
 
-from log import logger
+from util.log import logger
 
 url_to_file_cache = {}
 

@@ -5,68 +5,42 @@ from typing import Union
 from bs4 import BeautifulSoup, NavigableString, Tag
 from langchain_core.prompts import ChatPromptTemplate
 from selenium.common import TimeoutException
-from selenium.webdriver.chrome.webdriver import WebDriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
-from config import config
 
-import audio_parser
-import download
-from ai_interfaces import chat
-from log import logger
-from models import *
+from handler.models import *
+from runner import driver
+from util import audio_parser, download
+from util.config import config
+from util.llm import llm
+from util.log import logger
+from util.selenium import click_button, get_parent_element, find_element_safely, get_pure_text
 
-def get_parent_element(driver, child_element) -> WebElement:
-    return driver.execute_script("return arguments[0].parentElement;", child_element)
-
-def get_pure_text(element: WebElement) -> str:
-    content = element.get_attribute('outerHTML')
-    soup = BeautifulSoup(content, 'lxml')
-    return soup.get_text(separator="\n")
-
-def find_element_safely(driver: WebDriver, value: Optional[str] = None) -> Optional[WebElement]:
-    from selenium.common import NoSuchElementException
-    try:
-        return driver.find_element(By.CSS_SELECTOR, value)
-    except NoSuchElementException:
-        return None
-
-def click_button(driver, selector, wait_time=30):
-    from selenium.common import TimeoutException
-    try:
-        button = WebDriverWait(driver, wait_time).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-        )
-
-        button.click()
-    except TimeoutException:
-        pass
 
 class BaseHandler:
-    def __init__(self, driver):
+    def __init__(self):
         self.retry = 0
-        self.driver = driver
         self.score = 0.0
         self.retry_messages = ''
 
     def _parse_audio_text(self):
-        audio_field = self.driver.find_element(By.CSS_SELECTOR, "div.audio-material-wrapper>div>audio.unipus-audio-h5")
+        audio_field = driver.find_element(By.CSS_SELECTOR, "div.audio-material-wrapper>div>audio.unipus-audio-h5")
         download_url = audio_field.get_attribute("src")
         audio_file_path = download.download_cache_file(download_url, "mp3")
         text = audio_parser.from_audio(audio_file_path)
         return text
 
     def _parse_video_text(self):
-        video_field = self.driver.find_element(By.CSS_SELECTOR, "div.video-material-wrapper video")
+        video_field = driver.find_element(By.CSS_SELECTOR, "div.video-material-wrapper video")
         download_url = video_field.get_attribute("src")
         video_file_path = download.download_cache_file(download_url, "mp4")
         text = audio_parser.from_video(video_file_path)
         return text
 
     def _extract_tips(self) -> list[str]:
-        tips = find_element_safely(self.driver, "div.word-tips-wrap")
+        tips = find_element_safely(driver, "div.word-tips-wrap")
         tip_list = []
         if tips:
             soup = BeautifulSoup(tips.get_attribute("outerHTML"), 'lxml')
@@ -86,7 +60,7 @@ class BaseHandler:
     def __click_button_with_answer(self, selector, wait_time=30) -> bool:
         from selenium.common import TimeoutException
         try:
-            button = WebDriverWait(self.driver, wait_time).until(
+            button = WebDriverWait(driver, wait_time).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
             )
             if button.text and (button.text == '查看答题小结' or button.text == "继续学习" or button.text == "继续任务"):
@@ -114,7 +88,7 @@ class BaseHandler:
 
     def _check_score_with_retry(self, answer) -> bool:
         try:
-            score_element = WebDriverWait(self.driver, 2).until(
+            score_element = WebDriverWait(driver, 2).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "span.grade"))
             )
             self.score = float(score_element.text)
@@ -124,30 +98,30 @@ class BaseHandler:
         except TimeoutException:
             if self.retry < 2:
                 logger.info("正确率低于60%, 返回重做")
-                click_button(self.driver, "button.ant-btn.ant-btn-primary span", 1)
+                click_button(driver, "button.ant-btn.ant-btn-primary span", 1)
                 if not self.__click_button_with_answer("div.question-common-course-page>a.btn"):
                     return True
-                click_button(self.driver, "button.ant-btn.ant-btn-primary span", 1)
+                click_button(driver, "button.ant-btn.ant-btn-primary span", 1)
                 self.retry += 1
                 self.retry_messages += f"错误答案: {answer}"
                 return self.handle()
             else:
                 logger.info("正确率低于60%, 重试三次失败")
-                click_button(self.driver, "div.question-common-course-page>a.btn")
-                click_button(self.driver, "button.ant-btn.ant-btn-primary span", 1)
+                click_button(driver, "div.question-common-course-page>a.btn")
+                click_button(driver, "button.ant-btn.ant-btn-primary span", 1)
                 return False
 
 class DiscussionHandler(BaseHandler):
     def _internal_handle(self) -> Optional[str]:
         from selenium.common import TimeoutException
         try:
-            others = WebDriverWait(self.driver, 2).until(
+            others = WebDriverWait(driver, 2).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.discussion-cloud-recordList-item'))
             )
             if len(others) >= 5:
                 others_contents = [other.find_element(By.CSS_SELECTOR, "div.middle>.content").text for other in others]
-                discussion_title = self.driver.find_element(By.CSS_SELECTOR, 'div.discussion-title>p').text
-                discussion_content = get_pure_text(self.driver.find_element(By.CSS_SELECTOR, 'div.component-htmlview'))
+                discussion_title = driver.find_element(By.CSS_SELECTOR, 'div.discussion-title>p').text
+                discussion_content = get_pure_text(driver.find_element(By.CSS_SELECTOR, 'div.component-htmlview'))
                 prompt = ChatPromptTemplate.from_template(
                     """
                     以下是讨论的话题与别人的讨论内容, 主要根据别人的讨论内容生成一个"平均"的讨论内容，即综合一下, 词汇数要比其他人的讨论内容更少，最好在15-30词之间
@@ -159,7 +133,7 @@ class DiscussionHandler(BaseHandler):
                     {other_discussions}
                     """
                 )
-                chain = prompt | chat.with_structured_output(DiscussionAnswer)
+                chain = prompt | llm.with_structured_output(DiscussionAnswer)
                 response = chain.invoke(
                     {
                         'topic': discussion_title,
@@ -168,11 +142,11 @@ class DiscussionHandler(BaseHandler):
                     }
                 )
                 answer = response.answer
-                input_field = self.driver.find_element(By.CSS_SELECTOR, 'textarea.ant-input')
+                input_field = driver.find_element(By.CSS_SELECTOR, 'textarea.ant-input')
                 input_field.clear()
                 input_field.send_keys(answer)
                 logger.info(f"输入评论: {answer}")
-                click_button(self.driver, "div.btns-submit>button.ant-btn")
+                click_button(driver, "div.btns-submit>button.ant-btn")
                 logger.info("完成本次讨论答题")
                 return answer
             else:
@@ -189,7 +163,7 @@ class GeneralChoiceHandler(BaseHandler):
 
     def _internal_handle(self) -> list[str]:
         tip_list = self._extract_tips()
-        questions = self.driver.find_elements(By.CSS_SELECTOR, "div.question-common-abs-choice")
+        questions = driver.find_elements(By.CSS_SELECTOR, "div.question-common-abs-choice")
         multiple_questions_list = []
         single_questions_list = []
         for index, question in enumerate(questions):
@@ -229,7 +203,7 @@ class GeneralChoiceHandler(BaseHandler):
             其他提示: {retry_message}
             """
         )
-        chain = prompt | chat.with_structured_output(ChoiceAnswer)
+        chain = prompt | llm.with_structured_output(ChoiceAnswer)
 
         response = chain.invoke(
             {
@@ -246,9 +220,9 @@ class GeneralChoiceHandler(BaseHandler):
         if single_choices:
             valid_choices = single_choices
             for index, choice in enumerate(single_choices):
-                option_wrap = self.driver.find_elements(By.CSS_SELECTOR, "div.option-wrap")[index]
+                option_wrap = driver.find_elements(By.CSS_SELECTOR, "div.option-wrap")[index]
                 caption = choice.caption
-                select_divs = [get_parent_element(self.driver, element) for element in
+                select_divs = [get_parent_element(driver, element) for element in
                                option_wrap.find_elements(By.CSS_SELECTOR, "div.caption")
                                if
                                element.text == caption]
@@ -258,14 +232,14 @@ class GeneralChoiceHandler(BaseHandler):
                     select_div.click()
                 else:
                     logger.info("警告: 大模型返回了错误的答案")
-                    get_parent_element(self.driver,
+                    get_parent_element(driver,
                                        option_wrap.find_elements(By.CSS_SELECTOR, "div.caption")[0]).click()
         if multiple_choices:
             valid_choices = multiple_choices
             for index, choice in enumerate(multiple_choices):
-                option_wrap = self.driver.find_elements(By.CSS_SELECTOR, "div.option-wrap")[index]
+                option_wrap = driver.find_elements(By.CSS_SELECTOR, "div.option-wrap")[index]
                 captions = choice.captions
-                select_divs = [get_parent_element(self.driver, element) for element in
+                select_divs = [get_parent_element(driver, element) for element in
                                option_wrap.find_elements(By.CSS_SELECTOR, "div.caption")
                                if
                                element.text in captions]
@@ -274,14 +248,14 @@ class GeneralChoiceHandler(BaseHandler):
                 logger.info(f"多选题{index + 1}选择答案: {' '.join(captions)}")
                 if len(select_divs) == 0:
                     logger.info("警告: 大模型返回了错误的答案")
-                    get_parent_element(self.driver,
+                    get_parent_element(driver,
                                        option_wrap.find_elements(By.CSS_SELECTOR, "div.caption")[0]).click()
-        click_button(self.driver, "div.question-common-course-page>a.btn")
+        click_button(driver, "div.question-common-course-page>a.btn")
         return valid_choices
 
 class GeneralBlankFillingHandler(BaseHandler, ABC):
     def _fill_blanks(self, answers):
-        input_fields = self.driver.find_elements(By.CSS_SELECTOR, 'div.comp-scoop-reply input')
+        input_fields = driver.find_elements(By.CSS_SELECTOR, 'div.comp-scoop-reply input')
         for index, answer in enumerate(answers):
             logger.info(f"填词第{index + 1}处填写: {answer}")
             if index > len(input_fields) - 1:
@@ -296,9 +270,9 @@ class MediaBlankFillingHandler(GeneralBlankFillingHandler):
 
     def _internal_handle(self) -> list[str]:
         tip_list = self._extract_tips()
-        areas: list[WebElement] = self.driver.find_elements(By.CSS_SELECTOR, 'div[autodiv="already"]')
+        areas: list[WebElement] = driver.find_elements(By.CSS_SELECTOR, 'div[autodiv="already"]')
         if not areas:
-            areas: list[WebElement] = self.driver.find_elements(By.CSS_SELECTOR, 'div.comp-scoop-reply p')
+            areas: list[WebElement] = driver.find_elements(By.CSS_SELECTOR, 'div.comp-scoop-reply p')
         text_area = ""
         for area in areas:
             soup = BeautifulSoup(area.get_attribute("outerHTML"), 'lxml')
@@ -329,7 +303,7 @@ class MediaBlankFillingHandler(GeneralBlankFillingHandler):
             其他提示: {retry_message}
             """
         )
-        chain = prompt | chat.with_structured_output(AudioWithBlankFillingAnswer)
+        chain = prompt | llm.with_structured_output(AudioWithBlankFillingAnswer)
         response = chain.invoke(
             {
                 'content': self._get_plain_text(),
@@ -340,7 +314,7 @@ class MediaBlankFillingHandler(GeneralBlankFillingHandler):
         )
         answers = response.blanks
         super()._fill_blanks(answers)
-        click_button(self.driver, "div.question-common-course-page>a.btn")
+        click_button(driver, "div.question-common-course-page>a.btn")
         return answers
 
 class AudioWithBlankFillingHandler(MediaBlankFillingHandler):
@@ -369,7 +343,7 @@ class AudioWithChoiceHandler(GeneralChoiceHandler):
 
 class IdeaWithInputHandler(BaseHandler, ABC):
     def _input_with_log(self, question_list, answers):
-        question_fields = self.driver.find_elements(By.CSS_SELECTOR, "textarea.question-inputbox-input")
+        question_fields = driver.find_elements(By.CSS_SELECTOR, "textarea.question-inputbox-input")
         for index, field in enumerate(question_fields):
             logger.info(f"问题: {question_list[index]}, 回答: {answers[index]}")
             field.clear()
@@ -382,12 +356,12 @@ class IdeaWithAudioOrVideoHandler(IdeaWithInputHandler):
 
     def _internal_handle(self) -> list[str]:
         tip_list = self._extract_tips()
-        video = find_element_safely(self.driver, "div.video-material-wrapper")
+        video = find_element_safely(driver, "div.video-material-wrapper")
         if video:
             content = self._parse_video_text()
         else:
             content = self._parse_audio_text()
-        questions = self.driver.find_elements(By.CSS_SELECTOR, "div.question-inputbox")
+        questions = driver.find_elements(By.CSS_SELECTOR, "div.question-inputbox")
         question_list = []
         for question in questions:
             question_soup = BeautifulSoup(question.get_attribute("outerHTML"), 'lxml')
@@ -404,7 +378,7 @@ class IdeaWithAudioOrVideoHandler(IdeaWithInputHandler):
             {questions}
             """
         )
-        chain = prompt | chat.with_structured_output(IdeaWithAudioOrVideoAnswer)
+        chain = prompt | llm.with_structured_output(IdeaWithAudioOrVideoAnswer)
         response = chain.invoke(
             {
                 'content': content,
@@ -414,7 +388,7 @@ class IdeaWithAudioOrVideoHandler(IdeaWithInputHandler):
         )
         answers = response.answers
         super()._input_with_log(question_list, answers)
-        click_button(self.driver, "div.question-common-course-page>a.btn")
+        click_button(driver, "div.question-common-course-page>a.btn")
         return answers
 
 class IdeaWithArticleHandler(IdeaWithInputHandler):
@@ -424,8 +398,8 @@ class IdeaWithArticleHandler(IdeaWithInputHandler):
 
     def _internal_handle(self) -> list[str]:
         text_soup = BeautifulSoup(
-            self.driver.find_element(By.CSS_SELECTOR, "div.text-material-wrapper").get_attribute("outerHTML"), 'lxml')
-        questions = self.driver.find_elements(By.CSS_SELECTOR, "div.question-inputbox")
+            driver.find_element(By.CSS_SELECTOR, "div.text-material-wrapper").get_attribute("outerHTML"), 'lxml')
+        questions = driver.find_elements(By.CSS_SELECTOR, "div.question-inputbox")
         question_list = []
         for question in questions:
             question_soup = BeautifulSoup(question.get_attribute("outerHTML"), 'lxml')
@@ -440,7 +414,7 @@ class IdeaWithArticleHandler(IdeaWithInputHandler):
             {questions}
             """
         )
-        chain = prompt | chat.with_structured_output(IdeaWithAudioOrVideoAnswer)
+        chain = prompt | llm.with_structured_output(IdeaWithAudioOrVideoAnswer)
         response = chain.invoke(
             {
                 'passage': text_soup.get_text(separator="\n"),
@@ -449,7 +423,7 @@ class IdeaWithArticleHandler(IdeaWithInputHandler):
         )
         answers = response.answers
         super()._input_with_log(question_list, answers)
-        click_button(self.driver, "div.question-common-course-page>a.btn")
+        click_button(driver, "div.question-common-course-page>a.btn")
         return answers
 
 class VideoWithChoiceHandler(GeneralChoiceHandler):
@@ -478,17 +452,17 @@ class VideoWithBlankFillingHandler(MediaBlankFillingHandler):
 
 class VideoWatchHandler(BaseHandler):
     def _internal_handle(self):
-        videos = self.driver.find_elements(By.TAG_NAME, "video")
+        videos = driver.find_elements(By.TAG_NAME, "video")
         logger.info(f"当前页面共有{len(videos)}个视频, 开始遍历")
         for index, video in enumerate(videos):
             logger.info(f"播放第{index + 1}个视频")
-            self.driver.execute_script("arguments[0].play();", video)
+            driver.execute_script("arguments[0].play();", video)
             time.sleep(float(config["unipus"]["video_sleep"]))
 
 class ArticleWithChoiceHandler(GeneralChoiceHandler):
     def _get_plain_text(self) -> str:
         text_soup = BeautifulSoup(
-            self.driver.find_element(By.CSS_SELECTOR, "div.text-material-wrapper").get_attribute("outerHTML"), 'lxml')
+            driver.find_element(By.CSS_SELECTOR, "div.text-material-wrapper").get_attribute("outerHTML"), 'lxml')
         return text_soup.get_text(separator="\n")
 
     def _post_handle(self, answers) -> bool:
@@ -509,7 +483,7 @@ class WordCorrectionHandler(GeneralBlankFillingHandler):
         return True
 
     def _internal_handle(self):
-        text_wrapper = self.driver.find_element(By.CSS_SELECTOR, "div.question-common-abs-scoop>div>div")
+        text_wrapper = driver.find_element(By.CSS_SELECTOR, "div.question-common-abs-scoop>div>div")
         text_soup = BeautifulSoup(text_wrapper.get_attribute("outerHTML"), 'lxml')
         for span in text_soup.select("span.fe-scoop"):
             span.replace_with('___')
@@ -523,7 +497,7 @@ class WordCorrectionHandler(GeneralBlankFillingHandler):
             其他提示: {retry_message}
             """
         )
-        chain = prompt | chat.with_structured_output(WordCorrectionAnswer)
+        chain = prompt | llm.with_structured_output(WordCorrectionAnswer)
         response = chain.invoke(
             {
                 'content': text,
@@ -532,50 +506,55 @@ class WordCorrectionHandler(GeneralBlankFillingHandler):
         )
         answers = response.blanks
         super()._fill_blanks(answers)
-        click_button(self.driver, "div.question-common-course-page>a.btn")
+        click_button(driver, "div.question-common-course-page>a.btn")
 
-def find_handler(driver: WebDriver) -> Optional[BaseHandler]:
+def find_handler() -> Optional[BaseHandler]:
     set_timeout = False
     try:
         if driver is None:
             return None
         driver.implicitly_wait(0)
         set_timeout = True
-        if find_element_safely(driver, "div.layout-container.discussion-view"):
-            logger.info("发现讨论题处理器")
-            return DiscussionHandler(driver)
-        if find_element_safely(driver, "div.audio-material-wrapper") and find_element_safely(driver, "div.comp-scoop-reply")\
-            and not find_element_safely(driver, "div.comp-scoop-reply-dropdown-selection-overflow"):
-            logger.info("发现音频填空题处理器")
-            return AudioWithBlankFillingHandler(driver)
-        if find_element_safely(driver, "div.audio-material-wrapper") and find_element_safely(driver,"div.question-common-abs-choice"):
-            logger.info("发现音频选择题处理器")
-            return AudioWithChoiceHandler(driver)
-        if find_element_safely(driver, "div.video-material-wrapper") and find_element_safely(driver, "div.comp-scoop-reply") \
-                and not find_element_safely(driver, "div.comp-scoop-reply-dropdown-selection-overflow"):
-            logger.info("发现视频填空题处理器")
-            return VideoWithBlankFillingHandler(driver)
-        if find_element_safely(driver, "div.video-material-wrapper") and find_element_safely(driver,"div.question-common-abs-choice"):
-            logger.info("发现视频选择题处理器")
-            return VideoWithChoiceHandler(driver)
-        if find_element_safely(driver, "div.text-material-wrapper") and find_element_safely(driver, "div.question-common-abs-choice"):
-            logger.info("发现文本选择题处理器")
-            return ArticleWithChoiceHandler(driver)
-        if find_element_safely(driver, "div.audio-material-wrapper") and find_element_safely(driver, "div.question-inputbox"):
-            logger.info("发现音频观点题处理器")
-            return IdeaWithAudioOrVideoHandler(driver)
-        if find_element_safely(driver, "div.video-material-wrapper") and find_element_safely(driver, "div.question-inputbox"):
-            logger.info("发现视频观点题处理器")
-            return IdeaWithAudioOrVideoHandler(driver)
-        if find_element_safely(driver, "div.text-material-wrapper") and find_element_safely(driver, "div.question-inputbox"):
-            logger.info("发现文本观点题处理器")
-            return IdeaWithArticleHandler(driver)
-        if find_element_safely(driver, "div.layout-reply-container.full") and find_element_safely(driver,"div.comp-scoop-reply"):
-            logger.info("发现词汇纠正题处理器")
-            return WordCorrectionHandler(driver)
-        if find_element_safely(driver, "div.question-video-point-read"):
-            logger.info("发现视频观看处理器")
-            return VideoWatchHandler(driver)
+        # if find_element_safely(driver, "div.layout-container.discussion-view"):
+        #     logger.info("发现讨论题处理器")
+        #     return DiscussionHandler()
+        # if find_element_safely(driver, "div.audio-material-wrapper") and find_element_safely(driver, "div.comp-scoop-reply")\
+        #     and not find_element_safely(driver, "div.comp-scoop-reply-dropdown-selection-overflow"):
+        #     logger.info("发现音频填空题处理器")
+        #     return AudioWithBlankFillingHandler()
+        # if find_element_safely(driver, "div.audio-material-wrapper") and find_element_safely(driver,"div.question-common-abs-choice"):
+        #     logger.info("发现音频选择题处理器")
+        #     return AudioWithChoiceHandler()
+        # if find_element_safely(driver, "div.video-material-wrapper") and find_element_safely(driver, "div.comp-scoop-reply") \
+        #         and not find_element_safely(driver, "div.comp-scoop-reply-dropdown-selection-overflow"):
+        #     logger.info("发现视频填空题处理器")
+        #     return VideoWithBlankFillingHandler()
+        # if find_element_safely(driver, "div.video-material-wrapper") and find_element_safely(driver,"div.question-common-abs-choice"):
+        #     logger.info("发现视频选择题处理器")
+        #     return VideoWithChoiceHandler()
+        # if find_element_safely(driver, "div.text-material-wrapper") and find_element_safely(driver, "div.question-common-abs-choice"):
+        #     logger.info("发现文本选择题处理器")
+        #     return ArticleWithChoiceHandler()
+        # if find_element_safely(driver, "div.audio-material-wrapper") and find_element_safely(driver, "div.question-inputbox"):
+        #     logger.info("发现音频观点题处理器")
+        #     return IdeaWithAudioOrVideoHandler()
+        # if find_element_safely(driver, "div.video-material-wrapper") and find_element_safely(driver, "div.question-inputbox"):
+        #     logger.info("发现视频观点题处理器")
+        #     return IdeaWithAudioOrVideoHandler()
+        # if find_element_safely(driver, "div.text-material-wrapper") and find_element_safely(driver, "div.question-inputbox"):
+        #     logger.info("发现文本观点题处理器")
+        #     return IdeaWithArticleHandler()
+        # if find_element_safely(driver, "div.layout-reply-container.full") and find_element_safely(driver,"div.comp-scoop-reply"):
+        #     logger.info("发现词汇纠正题处理器")
+        #     return WordCorrectionHandler()
+        # if find_element_safely(driver, "div.question-video-point-read"):
+        #     logger.info("发现视频观看处理器")
+        #     return VideoWatchHandler()
+        from handler import find_handler_by_driver
+        handler = find_handler_by_driver(driver)
+        if handler:
+            logger.info(f"发现处理器: {handler.__class__.__name__}")
+            return handler
         logger.info("没有发现处理器处理本页")
         return None
     finally:

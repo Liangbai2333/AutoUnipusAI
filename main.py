@@ -4,10 +4,12 @@ import time
 
 from selenium.webdriver.common.by import By
 
-from config import config
-from download import download_file
-from log import logger
-from selenium_handler import get_driver, login, access_book_pages, get_pages, access_page, auto_answer_questions
+from runner import driver
+from runner.selenium_runner import login, access_book_pages, get_pages, access_page, auto_answer_questions
+from util.config import config
+from util.download import download_file
+from util.log import logger
+
 
 def check_ffmpeg_in_path():
     """检查系统环境变量中是否有 ffmpeg"""
@@ -53,8 +55,6 @@ def get_ffmpeg_bin_dir():
     logger.info("未找到系统中的ffmpeg, 开始下载...")
     download_ffmpeg()
     return get_ffmpeg_bin_dir()  # 重新获取路径
-
-driver = get_driver()
 
 if __name__ == '__main__':
     ffmpeg_bin_dir = get_ffmpeg_bin_dir()

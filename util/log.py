@@ -1,8 +1,7 @@
 import logging
 import os.path
 
-from config import config
-
+from util.config import config
 
 def setup_logger():
     file = config['logging']['file']

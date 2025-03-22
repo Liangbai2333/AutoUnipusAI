@@ -2,8 +2,8 @@ import torch
 import whisper
 from moviepy import VideoFileClip
 
-import download
-from log import logger
+from util import download
+from util.log import logger
 
 path_to_video_cache = {}
 path_to_audio_cache = {}

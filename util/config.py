@@ -43,8 +43,7 @@ def load_config():
     """
     加载配置文件并替换环境变量。
     """
-    config_path = os.path.join(os.path.dirname(__file__), "config.yml")
-    with open(config_path, 'r', encoding='utf-8') as file:
+    with open("config.yml", 'r', encoding='utf-8') as file:
         internal_config = yaml.safe_load(file)
 
     # 替换环境变量

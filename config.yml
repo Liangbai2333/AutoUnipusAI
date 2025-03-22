@@ -12,11 +12,11 @@ unipus:
   username: ${UNIPUS_USERNAME} #U校园账号
   password: ${UNIPUS_PASSWORD} #U校园密码
   book: "20000438203" #图书ID
-  offset: 1 #一开始的页面往后查找多少页
+  offset: 3 #一开始的页面往后查找多少页
   page_wait: 5 #页面做完后等待多久
   tab_wait: 3 #栏目做完后等待多久
   task_wait: 3 #任务做完后等待多久
-  video_sleep: 5 #视频停留时间
+  video_sleep: 10 #视频停留时间
 
 logging:
   level: "INFO"

@@ -3,45 +3,16 @@ from time import sleep
 from typing import Optional
 
 from selenium.common import TimeoutException
-
-from config import config
-from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
-from selenium.webdriver.support.wait import WebDriverWait
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.wait import WebDriverWait
 
-from log import logger
-from question_handlers import find_handler
+from handler import find_handler
+from util.config import config
+from util.log import logger
+from util.selenium import click_button
 
-def click_button(driver, selector, wait_time=30):
-    from selenium.common import TimeoutException
-    try:
-        button = WebDriverWait(driver, wait_time).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-        )
-
-        button.click()
-    except TimeoutException:
-        pass
-
-def find_element_safely(driver, value: Optional[str] = None) -> Optional[WebElement]:
-    from selenium.common import NoSuchElementException
-    try:
-        return driver.find_element(By.CSS_SELECTOR, value)
-    except NoSuchElementException:
-        return None
-
-def get_driver():
-    options = webdriver.ChromeOptions()
-    if config['selenium']['headless']:
-        options.add_argument('--headless')
-    from selenium.webdriver.chrome.service import Service
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    driver.implicitly_wait(config['selenium']['implicit_wait'])
-    logger.info("启动浏览器")
-    return driver
 
 def login(driver, username: Optional[str] = None, password: Optional[str] = None):
     logger.info("开始登录")
@@ -88,56 +59,101 @@ def access_page(driver, page: WebElement):
     page.click()
     click_button(driver,"button.ant-btn.ant-btn-primary span")
 
-def auto_answer_questions(driver, page_name: str):
+
+def auto_answer_questions(driver, page_name):
     """
     自动答题核心模块
     :param driver: 驱动器
     :param page_name: 页名
     :return: 答题失败的集合 (不包括检测不到处理器的)
     """
+    failed_questions = set()
     logger.info(f"开始回答页面{page_name}的问题")
+
+    # 定位并获取所有标签页
     tab_row = driver.find_element(By.CSS_SELECTOR, "div.ant-row.pc-tab-row")
     tabs = tab_row.find_elements(By.CSS_SELECTOR, "div.tab")
     logger.info(f"检测到页面共有{len(tabs)}个栏目, 开始遍历")
-    for index, tab in enumerate(tabs):
-        logger.info(f"进入第{index + 1}个栏目: {tab.find_element(By.TAG_NAME, "div").text}")
-        tab.click()
-        click_button(driver, "button.ant-btn.ant-btn-primary span", 1)
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "div.layout-container"))
-        )
 
+    # 遍历每个标签页
+    for tab_index, tab in enumerate(tabs):
+        tab_name = tab.find_element(By.TAG_NAME, "div").text
+        logger.info(f"进入第{tab_index + 1}个栏目: {tab_name}")
+        tab.click()
+
+        # 点击进入标签页的按钮
+        click_button(driver, "button.ant-btn.ant-btn-primary span", 1)
+
+        # 等待页面加载
+        wait_for_element(driver, "div.layout-container", timeout=30)
+
+        # 获取当前标签页下的所有任务
         tasks = driver.find_elements(By.CSS_SELECTOR, "div.pc-header-tasks-row>div")
         logger.info(f"页面共有{len(tasks)}个任务, 开始遍历")
-        for (index_task, task) in enumerate(tasks):
-            def access_internal_with_retry(retry: int):
-                if retry > 0:
-                    logger.info(f"进入第{index_task + 1}个任务: {task.text} (Retry {retry})")
-                else:
-                    logger.info(f"进入第{index_task + 1}个任务: {task.text}")
-                task.click()
-                click_button(driver, "button.ant-btn.ant-btn-primary span", 1)
-                try:
-                    WebDriverWait(driver, 5).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.layout-container"))
-                    )
-                    handler = find_handler(driver)
-                    if handler:
-                        try:
-                            if not handler.handle():
-                                if retry < 2:
-                                    access_internal_with_retry(retry + 1)
-                                else:
-                                    logger.info("做题失败")
-                            else:
-                                logger.info("做题完成，进入下一题")
-                        except Exception as e:
-                            logger.warning(f"处理问题时遇到错误", exc_info=e)
-                except TimeoutException:
-                    logger.info("不支持处理的页面")
 
-            access_internal_with_retry(0)
+        # 遍历每个任务
+        for task_index, task in enumerate(tasks):
+            task_result = process_task(driver, task, task_index)
+            if not task_result:
+                failed_questions.add(f"{page_name}-{tab_name}-Task{task_index + 1}")
+
+            # 任务间等待
             time.sleep(float(config['unipus']['task_wait']))
+
+        # 标签页间等待
         time.sleep(float(config['unipus']['tab_wait']))
+
     logger.info("本页任务全部完成!")
+    return failed_questions
+
+
+def process_task(driver, task, task_index, max_retries=2):
+    """处理单个任务，支持重试机制"""
+    for retry in range(max_retries + 1):
+        if retry > 0:
+            logger.info(f"进入第{task_index + 1}个任务: {task.text} (Retry {retry})")
+        else:
+            logger.info(f"进入第{task_index + 1}个任务: {task.text}")
+
+        # 点击任务
+        task.click()
+        click_button(driver, "button.ant-btn.ant-btn-primary span", 1)
+
+        try:
+            # 等待页面加载
+            wait_for_element(driver, "div.layout-container", timeout=5)
+
+            # 查找处理器
+            handler = find_handler()
+            if not handler:
+                logger.info("找不到适合的处理器")
+                return False
+
+            # 处理问题
+            if handler.handle():
+                logger.info("做题完成，进入下一题")
+                return True
+            elif retry < max_retries:
+                # 如果处理失败且还有重试次数，继续下一次重试
+                continue
+            else:
+                logger.info("做题失败")
+                return False
+
+        except TimeoutException:
+            logger.info("不支持处理的页面")
+            return False
+        except Exception as e:
+            logger.warning(f"处理问题时遇到错误", exc_info=e)
+            if retry == max_retries:
+                return False
+
+    return False
+
+
+def wait_for_element(driver, css_selector, timeout=10):
+    """等待元素出现的封装函数"""
+    return WebDriverWait(driver, timeout).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, css_selector))
+    )
 
