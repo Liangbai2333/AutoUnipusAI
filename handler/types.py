@@ -5,6 +5,7 @@ from typing import Union
 from bs4 import BeautifulSoup, NavigableString, Tag
 from langchain_core.prompts import ChatPromptTemplate
 from selenium.common import TimeoutException
+from selenium.webdriver import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
@@ -507,6 +508,191 @@ class WordCorrectionHandler(GeneralBlankFillingHandler):
         answers = response.blanks
         super()._fill_blanks(answers)
         click_button(driver, "div.question-common-course-page>a.btn")
+
+class GeneralDragElementHandler(BaseHandler):
+    @abstractmethod
+    def _get_plain_text(self) -> str:
+        pass
+
+    def _internal_handle(self) -> list[str]:
+        tip_list = self._extract_tips()
+        elements = driver.find_elements(By.CSS_SELECTOR, "div.sortable-list-wrapper>div#sequenceReplyViewItemText")
+        choices = [get_pure_text(element) for element in elements]
+        prompt = ChatPromptTemplate.from_template(
+            """
+            你将要通过一些内容与提示把答案进行排序，将选项的ABCD映射为0123等，然后进行答案排序，按排序后的顺序列表返回,
+            如果你觉得信息不足，则随机返回答案顺序
+            其他提示通常为错误的答案提示，不可完全重复了
+            内容:
+            {content}
+            提示(列表): 
+            {tips}
+            选项列表:
+            {choices}
+            其他提示: {retry_message}
+            """
+        )
+        chain = prompt | llm.with_structured_output(DragElementAnswer)
+
+        response = chain.invoke(
+            {
+                'content': self._get_plain_text(),
+                'tips': tip_list,
+                'choices': choices,
+                'retry_message': self.retry_messages
+            }
+        )
+
+        orders: list[int] = response.orders
+
+        actions = ActionChains(driver)
+
+        if len(orders) < len(elements):
+            logger.warning("答案数量不足，请检查答案数量是否正确")
+
+        mapping_elements = dict(enumerate(elements))
+
+        logger.info(f"开始进行拖拽排序, 目标顺序: {orders}")
+        for index, source_element in enumerate(elements):
+            order = orders.index(index)
+            target_element = mapping_elements.get(order)
+            if target_element is None:
+                logger.warning(f"答案{index}未找到对应的目标元素，请检查答案数量是否正确")
+                break
+
+            actions.click_and_hold(source_element)
+            actions.pause(0.3)  # 短暂暂停增加可靠性
+            actions.move_to_element(target_element)
+            actions.pause(0.3)
+            actions.release()
+            actions.perform()
+            actions.reset_actions()
+            mapping_elements[order] = source_element
+            mapping_elements[index] = target_element
+            time.sleep(0.2)
+
+        click_button(driver, "div.question-common-course-page>a.btn")
+        return [str(order) for order in orders]
+
+class AudioDragElementHandler(GeneralDragElementHandler):
+    def _get_plain_text(self) -> str:
+        return self._parse_audio_text()
+
+    def _post_handle(self, answers) -> bool:
+        if self._check_score_with_retry(answers):
+            logger.info(f"完成本次音频拖拽答题, 最终分数: {self.score}")
+        else:
+            logger.info(f"本次音频拖拽答题失败, 最终分数: {self.score}")
+
+        return True
+
+class VideoDragElementHandler(GeneralDragElementHandler):
+    def _get_plain_text(self) -> str:
+        return self._parse_video_text()
+
+    def _post_handle(self, answers) -> bool:
+        if self._check_score_with_retry(answers):
+            logger.info(f"完成本次视频拖拽答题, 最终分数: {self.score}")
+        else:
+            logger.info(f"本次视频拖拽答题失败, 最终分数: {self.score}")
+
+        return True
+
+class GeneralSelectionHandler(BaseHandler):
+    @abstractmethod
+    def _get_plain_text(self) -> str:
+        pass
+
+    def _internal_handle(self) -> list[str]:
+        questions = driver.find_elements(By.CSS_SELECTOR, "div.comp-scoop-reply-dropdown-selection-overflow tbody>tr > *:nth-child(2)")
+
+        question_list = []
+        for question in questions:
+            soup = BeautifulSoup(question.get_attribute("outerHTML"), 'lxml')
+            direct_text = ''
+
+            for children in soup.td.children:
+                print(children)
+                if isinstance(children, NavigableString):
+                    direct_text += children.text
+            ol = soup.find("ol")
+            li_elements = ol.find_all("li") if ol else []
+            question_list.append(
+                {
+                    "question": direct_text,
+                    "options": [Choice(caption=str(index), content=li.get_text()) for index, li in enumerate(li_elements)]
+                }
+            )
+
+        prompt = ChatPromptTemplate.from_template(
+            """
+            你将要通过一些内容与提示推断出最符合问题的答案, 每个问题的答案选择数字选项的其中一个, 答案以问题的顺序按列表返回
+            其他提示通常为错误的答案提示，不可完全重复了
+            内容:
+            {content}
+            提示(列表): 
+            {tips}
+            答案:
+            {choices}
+            其他提示: {retry_message}
+            """
+        )
+        chain = prompt | llm.with_structured_output(SelectionAnswer)
+
+        response = chain.invoke(
+            {
+                'content': self._get_plain_text(),
+                'tips': self._extract_tips(),
+                'choices': question_list,
+                'retry_message': self.retry_messages
+            }
+        )
+
+        captions: list[int] = response.captions
+
+        logger.info(f"下拉选择答题目标答案: {captions}")
+
+        if len(captions) != len(questions):
+            logger.warning("答案数量不足，请检查答案数量是否正确")
+        else:
+            for index, question in enumerate(questions):
+                selection_element = question.find_element(By.CSS_SELECTOR,
+                                                          "span.scoop-select-wrapper>span.input-wrapper")
+                selection_button = selection_element.find_element(By.CSS_SELECTOR, "span.ant-dropdown-trigger")
+                selection_button.click()
+                time.sleep(0.2)
+                selections = selection_element.find_elements(By.CSS_SELECTOR, "span.input-wrapper li")
+                if but := selections[captions[index]]:
+                    but.click()
+
+        click_button(driver, "div.question-common-course-page>a.btn")
+        return [str(caption) for caption in captions]
+
+class AudioSelectionHandler(GeneralSelectionHandler):
+    def _get_plain_text(self) -> str:
+        return self._parse_audio_text()
+
+    def _post_handle(self, answers) -> bool:
+        if self._check_score_with_retry(answers):
+            logger.info(f"完成本次音频下拉选择答题, 最终分数: {self.score}")
+        else:
+            logger.info(f"本次音频下拉选择答题失败, 最终分数: {self.score}")
+
+        return True
+
+class VideoSelectionHandler(GeneralSelectionHandler):
+    def _get_plain_text(self) -> str:
+        return self._parse_video_text()
+
+    def _post_handle(self, answers) -> bool:
+        if self._check_score_with_retry(answers):
+            logger.info(f"完成本次视频下拉选择答题, 最终分数: {self.score}")
+        else:
+            logger.info(f"本次视频下拉选择答题失败, 最终分数: {self.score}")
+
+        return True
+
+
 
 def find_handler() -> Optional[BaseHandler]:
     set_timeout = False

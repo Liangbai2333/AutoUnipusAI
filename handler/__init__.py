@@ -39,6 +39,10 @@ register_handler(IdeaWithAudioOrVideoHandler()).to("div.video-material-wrapper",
 register_handler(IdeaWithArticleHandler()).to("div.text-material-wrapper", "div.question-inputbox")
 register_handler(WordCorrectionHandler()).to("div.layout-reply-container.full", "div.comp-scoop-reply")
 register_handler(VideoWatchHandler()).to("div.question-video-point-read")
+register_handler(AudioDragElementHandler()).to("div.audio-material-wrapper", "div.sortable-list-wrapper")
+register_handler(VideoDragElementHandler()).to("div.video-material-wrapper", "div.sortable-list-wrapper")
+register_handler(AudioSelectionHandler()).to("div.audio-material-wrapper", "div.comp-scoop-reply-dropdown-selection-overflow")
+register_handler(VideoSelectionHandler()).to("div.video-material-wrapper", "div.comp-scoop-reply-dropdown-selection-overflow")
 
 def find_handler_by_driver(source: WebDriver) -> Optional[BaseHandler]:
     for registry in registered_handlers:

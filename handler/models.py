@@ -24,3 +24,9 @@ class WordCorrectionAnswer(BaseModel):
     blanks: list[str]
 class IdeaWithPassageAnswer(BaseModel):
     answers: list[str]
+
+class DragElementAnswer(BaseModel):
+    orders: list[int] = Field(default=[], description="顺序返回的拖拽元素的答案顺序集合")
+
+class SelectionAnswer(BaseModel):
+    captions: list[int] = Field(default=[], description="选择题的答案序号集合")
