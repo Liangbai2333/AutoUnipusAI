@@ -454,12 +454,26 @@ class VideoWithBlankFillingHandler(MediaBlankFillingHandler):
 
 class VideoWatchHandler(BaseHandler):
     def _internal_handle(self):
-        videos = driver.find_elements(By.TAG_NAME, "video")
-        logger.info(f"当前页面共有{len(videos)}个视频, 开始遍历")
-        for index, video in enumerate(videos):
+        video_boxes = driver.find_elements(By.CLASS_NAME, "video-box")
+        logger.info(f"当前页面共有{len(video_boxes)}个视频, 开始遍历")
+        for index, video_box in enumerate(video_boxes):
+            video = video_box.find_element(By.TAG_NAME, "video")
             logger.info(f"播放第{index + 1}个视频")
-            driver.execute_script("arguments[0].play();", video)
-            time.sleep(float(config["unipus"]["video_sleep"]))
+            driver.execute_script("arguments[0].pause(); arguments[0].play();", video)
+            duration = driver.execute_script("return arguments[0].duration;", video)
+            try:
+                video_box.find_elements(By.CLASS_NAME, "controlBtn")[0].click()  # 倍速按钮
+                time.sleep(0.5)
+                video_box.find_elements(By.CLASS_NAME, "textOption")[5].click()  # 选择2倍速
+                logger.info("视频调整为2倍速播放")
+            except Exception:
+                logger.info("倍速调整失败")
+            logger.info(f"视频时长为{duration / 2}秒, 请耐心等待")
+            if config["unipus"]["video_full"]:
+                time.sleep(duration / 2)
+            else:
+                time.sleep(float(config["unipus"]["video_sleep"]))
+            logger.info("当前视频播放完毕")
 
 class ArticleWithChoiceHandler(GeneralChoiceHandler):
     def _get_plain_text(self) -> str:
@@ -613,7 +627,6 @@ class GeneralSelectionHandler(BaseHandler):
             direct_text = ''
 
             for children in soup.td.children:
-                print(children)
                 if isinstance(children, NavigableString):
                     direct_text += children.text
             ol = soup.find("ol")
