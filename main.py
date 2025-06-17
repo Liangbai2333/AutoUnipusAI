@@ -28,7 +28,11 @@ def download_ffmpeg():
 
     # 下载 ffmpeg
     ffmpeg_url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-    ffmpeg_zip_path = download_file(ffmpeg_url, ffmpeg_dir, "ffmpeg.zip")
+
+    if not os.path.exists(os.path.join(ffmpeg_dir, "ffmpeg.zip")):
+        ffmpeg_zip_path = download_file(ffmpeg_url, ffmpeg_dir, "ffmpeg.zip")
+    else:
+        ffmpeg_zip_path = os.path.join(os.getcwd(), "ffmpeg", "ffmpeg.zip")
 
     # 解压 ffmpeg
     logger.info("开始解压ffmpeg...")
@@ -38,7 +42,7 @@ def download_ffmpeg():
 
     # 删除下载的压缩文件
     os.remove(ffmpeg_zip_path)
-    logger.info(f"ffmpeg 已下载并解压到 {ffmpeg_dir}。")
+    logger.info(f"ffmpeg 已解压到 {ffmpeg_dir}。")
 
 def get_ffmpeg_bin_dir():
     """获取 ffmpeg 的 bin 目录路径"""
@@ -67,10 +71,16 @@ if __name__ == '__main__':
 
     login(driver)
     access_book_pages(driver)
-    pages = get_pages(driver)
-    for page in pages:
+    pages = get_pages(driver)[int(config['unipus']['offset_page']):]
+    logger.info(f"获取书籍所有目录, 偏移量: {config['unipus']['offset_page']}, 页面数: {len(pages)}")
+    for i, page in enumerate(pages):
         access_page(driver, page)
-        auto_answer_questions(driver, page.find_element(By.CSS_SELECTOR, "span.pc-menu-node-name").text)
+        auto_answer_questions(
+            driver=driver,
+            page_name=page.find_element(By.CSS_SELECTOR, "span.pc-menu-node-name").text,
+            offset_tab=int(config['unipus']['offset_tab']) if i == 0  else 0,
+            offset_task=int(config['unipus']['offset_task']) if i == 0  else 0
+        )
         time.sleep(float(config['unipus']['page_wait']))
 
 

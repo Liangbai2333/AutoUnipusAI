@@ -48,10 +48,9 @@ def access_book_pages(driver, book: Optional[str] = None):
     logger.info(f"成功进入书籍{book}阅读界面")
 
 def get_pages(driver) -> list[WebElement]:
-    logger.info(f"获取书籍所有目录, 偏移量: {config['unipus']['offset']}")
     return WebDriverWait(driver, 30).until(
         EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.pc-slider-menu-micro"))
-    )[int(config['unipus']['offset']):]
+    )
 
 def access_page(driver, page: WebElement):
     page_name = page.find_element(By.CSS_SELECTOR, "span.pc-menu-node-name").text
@@ -60,11 +59,13 @@ def access_page(driver, page: WebElement):
     click_button(driver,"button.ant-btn.ant-btn-primary span")
 
 
-def auto_answer_questions(driver, page_name):
+def auto_answer_questions(driver, page_name, offset_tab, offset_task):
     """
     自动答题核心模块
     :param driver: 驱动器
     :param page_name: 页名
+    :param offset_tab 偏移标签
+    :param offset_task 便宜任务
     :return: 答题失败的集合 (不包括检测不到处理器的)
     """
     failed_questions = set()
@@ -72,14 +73,17 @@ def auto_answer_questions(driver, page_name):
 
     # 定位并获取所有标签页
     tab_row = driver.find_element(By.CSS_SELECTOR, "div.ant-row.pc-tab-row")
-    tabs = tab_row.find_elements(By.CSS_SELECTOR, "div.tab")
+    tabs = tab_row.find_elements(By.CSS_SELECTOR, "div.tab")[offset_tab:]
     logger.info(f"检测到页面共有{len(tabs)}个栏目, 开始遍历")
 
     # 遍历每个标签页
     for tab_index, tab in enumerate(tabs):
         tab_name = tab.find_element(By.TAG_NAME, "div").text
         logger.info(f"进入第{tab_index + 1}个栏目: {tab_name}")
-        tab.click()
+        clickable_tab = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable(tab)
+        )
+        clickable_tab.click()
 
         # 点击进入标签页的按钮
         click_button(driver, "button.ant-btn.ant-btn-primary span", 1)
@@ -88,7 +92,7 @@ def auto_answer_questions(driver, page_name):
         wait_for_element(driver, "div.layout-container", timeout=30)
 
         # 获取当前标签页下的所有任务
-        tasks = driver.find_elements(By.CSS_SELECTOR, "div.pc-header-tasks-row>div")
+        tasks = driver.find_elements(By.CSS_SELECTOR, "div.pc-header-tasks-row>div")[offset_task:]
         logger.info(f"页面共有{len(tasks)}个任务, 开始遍历")
 
         # 遍历每个任务
@@ -116,7 +120,10 @@ def process_task(driver, task, task_index, max_retries=2):
             logger.info(f"进入第{task_index + 1}个任务: {task.text}")
 
         # 点击任务
-        task.click()
+        clickable_task = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable(task)
+        )
+        clickable_task.click()
         click_button(driver, "button.ant-btn.ant-btn-primary span", 1)
 
         try:

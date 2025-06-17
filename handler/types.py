@@ -20,57 +20,61 @@ from util.log import logger
 from util.selenium import click_button, get_parent_element, find_element_safely, get_pure_text
 
 
+def _parse_audio_text():
+    audio_field = driver.find_element(By.CSS_SELECTOR, "div.audio-material-wrapper>div>audio.unipus-audio-h5")
+    download_url = audio_field.get_attribute("src")
+    audio_file_path = download.download_cache_file(download_url, "mp3")
+    text = audio_parser.from_audio(audio_file_path)
+    return text
+
+
+def _parse_video_text():
+    video_field = driver.find_element(By.CSS_SELECTOR, "div.video-material-wrapper video")
+    download_url = video_field.get_attribute("src")
+    video_file_path = download.download_cache_file(download_url, "mp4")
+    text = audio_parser.from_video(video_file_path)
+    return text
+
+
+def _extract_tips() -> list[str]:
+    tips = find_element_safely(driver, "div.word-tips-wrap")
+    tip_list = []
+    if tips:
+        soup = BeautifulSoup(tips.get_attribute("outerHTML"), 'lxml')
+        branches = soup.select("div.qc-abs-word-branch")
+        tip_list = []
+        for branch in branches:
+            title = branch.select_one("h2.word-title").get_text()
+            items = branch.select("li.word-item-container")
+            word_list = []
+            for item in items:
+                word_name = item.select_one("div.word-name").get_text()
+                word_explanation = item.select_one("div.word-explanation").get_text()
+                word_list.append(f"{word_name} {word_explanation}")
+            tip_list.append(f"{title}: {' '.join(word_list)}")
+    return tip_list
+
+
+def _click_button_with_answer(selector, wait_time=30) -> bool:
+    from selenium.common import TimeoutException
+    try:
+        button = WebDriverWait(driver, wait_time).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+        )
+        button_text =  button.text.strip() if button.text else None
+        if button_text and (button_text == '查看答题小结' or button_text == "继续学习" or button_text == "继续任务"):
+            return False
+        button.click()
+        return True
+    except TimeoutException:
+        return False
+
+
 class BaseHandler:
     def __init__(self):
         self.retry = 0
         self.score = 0.0
         self.retry_messages = ''
-
-    def _parse_audio_text(self):
-        audio_field = driver.find_element(By.CSS_SELECTOR, "div.audio-material-wrapper>div>audio.unipus-audio-h5")
-        download_url = audio_field.get_attribute("src")
-        audio_file_path = download.download_cache_file(download_url, "mp3")
-        text = audio_parser.from_audio(audio_file_path)
-        return text
-
-    def _parse_video_text(self):
-        video_field = driver.find_element(By.CSS_SELECTOR, "div.video-material-wrapper video")
-        download_url = video_field.get_attribute("src")
-        video_file_path = download.download_cache_file(download_url, "mp4")
-        text = audio_parser.from_video(video_file_path)
-        return text
-
-    def _extract_tips(self) -> list[str]:
-        tips = find_element_safely(driver, "div.word-tips-wrap")
-        tip_list = []
-        if tips:
-            soup = BeautifulSoup(tips.get_attribute("outerHTML"), 'lxml')
-            branches = soup.select("div.qc-abs-word-branch")
-            tip_list = []
-            for branch in branches:
-                title = branch.select_one("h2.word-title").get_text()
-                items = branch.select("li.word-item-container")
-                word_list = []
-                for item in items:
-                    word_name = item.select_one("div.word-name").get_text()
-                    word_explanation = item.select_one("div.word-explanation").get_text()
-                    word_list.append(f"{word_name} {word_explanation}")
-                tip_list.append(f"{title}: {' '.join(word_list)}")
-        return tip_list
-
-    def __click_button_with_answer(self, selector, wait_time=30) -> bool:
-        from selenium.common import TimeoutException
-        try:
-            button = WebDriverWait(driver, wait_time).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-            )
-            button_text =  button.text.strip() if button.text else None
-            if button_text and (button_text == '查看答题小结' or button_text == "继续学习" or button_text == "继续任务"):
-                return False
-            button.click()
-            return True
-        except TimeoutException:
-            pass
 
     @abstractmethod
     def _internal_handle(self) -> Union[None, str, list[str]]:
@@ -101,7 +105,7 @@ class BaseHandler:
             if self.retry < 2:
                 logger.info("正确率低于60%, 返回重做")
                 click_button(driver, "button.ant-btn.ant-btn-primary span", 1)
-                if not self.__click_button_with_answer("div.question-common-course-page>a.btn"):
+                if not _click_button_with_answer("div.question-common-course-page>a.btn"):
                     return True
                 click_button(driver, "button.ant-btn.ant-btn-primary span", 1)
                 self.retry += 1
@@ -164,7 +168,7 @@ class GeneralChoiceHandler(BaseHandler):
         pass
 
     def _internal_handle(self) -> list[str]:
-        tip_list = self._extract_tips()
+        tip_list = _extract_tips()
         questions = driver.find_elements(By.CSS_SELECTOR, "div.question-common-abs-choice")
         multiple_questions_list = []
         single_questions_list = []
@@ -271,7 +275,7 @@ class MediaBlankFillingHandler(GeneralBlankFillingHandler):
         pass
 
     def _internal_handle(self) -> list[str]:
-        tip_list = self._extract_tips()
+        tip_list = _extract_tips()
         areas: list[WebElement] = driver.find_elements(By.CSS_SELECTOR, 'div[autodiv="already"]')
         if not areas:
             areas: list[WebElement] = driver.find_elements(By.CSS_SELECTOR, 'div.comp-scoop-reply p')
@@ -321,7 +325,7 @@ class MediaBlankFillingHandler(GeneralBlankFillingHandler):
 
 class AudioWithBlankFillingHandler(MediaBlankFillingHandler):
     def _get_plain_text(self) -> str:
-        return self._parse_audio_text()
+        return _parse_audio_text()
 
     def _post_handle(self, answers) -> bool:
         if self._check_score_with_retry(answers):
@@ -333,7 +337,7 @@ class AudioWithBlankFillingHandler(MediaBlankFillingHandler):
 
 class AudioWithChoiceHandler(GeneralChoiceHandler):
     def _get_plain_text(self) -> str:
-        return self._parse_audio_text()
+        return _parse_audio_text()
 
     def _post_handle(self, answers) -> bool:
         if self._check_score_with_retry(answers):
@@ -357,12 +361,12 @@ class IdeaWithAudioOrVideoHandler(IdeaWithInputHandler):
         return True
 
     def _internal_handle(self) -> list[str]:
-        tip_list = self._extract_tips()
+        tip_list = _extract_tips()
         video = find_element_safely(driver, "div.video-material-wrapper")
         if video:
-            content = self._parse_video_text()
+            content = _parse_video_text()
         else:
-            content = self._parse_audio_text()
+            content = _parse_audio_text()
         questions = driver.find_elements(By.CSS_SELECTOR, "div.question-inputbox")
         question_list = []
         for question in questions:
@@ -430,7 +434,7 @@ class IdeaWithArticleHandler(IdeaWithInputHandler):
 
 class VideoWithChoiceHandler(GeneralChoiceHandler):
     def _get_plain_text(self) -> str:
-        return self._parse_video_text()
+        return _parse_video_text()
 
     def _post_handle(self, answers) -> bool:
         if self._check_score_with_retry(answers):
@@ -442,7 +446,7 @@ class VideoWithChoiceHandler(GeneralChoiceHandler):
 
 class VideoWithBlankFillingHandler(MediaBlankFillingHandler):
     def _get_plain_text(self) -> str:
-        return self._parse_video_text()
+        return _parse_video_text()
 
     def _post_handle(self, answers) -> bool:
         if self._check_score_with_retry(answers):
@@ -530,7 +534,7 @@ class GeneralDragElementHandler(BaseHandler):
         pass
 
     def _internal_handle(self) -> list[str]:
-        tip_list = self._extract_tips()
+        tip_list = _extract_tips()
         elements = driver.find_elements(By.CSS_SELECTOR, "div.sortable-list-wrapper>div#sequenceReplyViewItemText")
         choices = [get_pure_text(element) for element in elements]
         prompt = ChatPromptTemplate.from_template(
@@ -562,36 +566,75 @@ class GeneralDragElementHandler(BaseHandler):
 
         actions = ActionChains(driver)
 
-        if len(orders) < len(elements):
-            logger.warning("答案数量不足，请检查答案数量是否正确")
-
-        mapping_elements = dict(enumerate(elements))
+        if len(orders) != len(elements):
+            logger.warning(f"答案数量不匹配，期望{len(elements)}个，实际{len(orders)}个")
+            # 如果数量不匹配，补全或截断
+            if len(orders) < len(elements):
+                orders.extend(list(range(len(orders), len(elements))))
+            else:
+                orders = orders[:len(elements)]
 
         logger.info(f"开始进行拖拽排序, 目标顺序: {orders}")
-        for index, source_element in enumerate(elements):
-            order = orders.index(index)
-            target_element = mapping_elements.get(order)
-            if target_element is None:
-                logger.warning(f"答案{index}未找到对应的目标元素，请检查答案数量是否正确")
-                break
+        logger.info(f"当前选项: {[f'{i}:{choices[i][:20]}...' for i in range(len(choices))]}")
 
-            actions.click_and_hold(source_element)
-            actions.pause(0.3)  # 短暂暂停增加可靠性
-            actions.move_to_element(target_element)
-            actions.pause(0.3)
-            actions.release()
-            actions.perform()
-            actions.reset_actions()
-            mapping_elements[order] = source_element
-            mapping_elements[index] = target_element
-            time.sleep(0.2)
+        # 跟踪当前每个位置上的元素索引
+        current_positions = list(range(len(elements)))
+
+        # 按目标位置顺序执行拖拽
+        for target_pos in range(len(orders)):
+            target_element_index = orders[target_pos]
+
+            # 验证索引有效性
+            if target_element_index >= len(elements):
+                logger.warning(f"目标元素索引{target_element_index}超出范围，跳过")
+                continue
+
+            # 找到目标元素当前在哪个位置
+            try:
+                current_pos = current_positions.index(target_element_index)
+            except ValueError:
+                logger.warning(f"未找到元素索引{target_element_index}，跳过")
+                continue
+
+            # 如果已经在正确位置，跳过
+            if current_pos == target_pos:
+                logger.debug(f"元素{target_element_index}已在目标位置{target_pos}")
+                continue
+
+            # 执行拖拽：从current_pos拖到target_pos
+            source_element = elements[current_pos]
+            target_position_element = elements[target_pos]
+
+            logger.info(
+                f"拖拽元素{target_element_index}('{choices[target_element_index][:20]}...'): 从位置{current_pos} -> 位置{target_pos}")
+
+            try:
+                actions.click_and_hold(source_element)
+                actions.pause(0.3)
+                actions.move_to_element(target_position_element)
+                actions.pause(0.3)
+                actions.release()
+                actions.perform()
+                actions.reset_actions()
+
+                # 更新位置映射：模拟拖拽后的位置变化
+                element_being_moved = current_positions[current_pos]
+                current_positions.pop(current_pos)
+                current_positions.insert(target_pos, element_being_moved)
+
+                logger.debug(f"拖拽后位置状态: {current_positions}")
+                time.sleep(0.3)  # 等待动画完成
+
+            except Exception as e:
+                logger.error(f"拖拽操作失败: {e}")
+                break
 
         click_button(driver, "div.question-common-course-page>a.btn")
         return [str(order) for order in orders]
 
 class AudioDragElementHandler(GeneralDragElementHandler):
     def _get_plain_text(self) -> str:
-        return self._parse_audio_text()
+        return _parse_audio_text()
 
     def _post_handle(self, answers) -> bool:
         if self._check_score_with_retry(answers):
@@ -603,7 +646,7 @@ class AudioDragElementHandler(GeneralDragElementHandler):
 
 class VideoDragElementHandler(GeneralDragElementHandler):
     def _get_plain_text(self) -> str:
-        return self._parse_video_text()
+        return _parse_video_text()
 
     def _post_handle(self, answers) -> bool:
         if self._check_score_with_retry(answers):
@@ -638,6 +681,8 @@ class GeneralSelectionHandler(BaseHandler):
                 }
             )
 
+        print(question_list)
+
         prompt = ChatPromptTemplate.from_template(
             """
             你将要通过一些内容与提示推断出最符合问题的答案, 每个问题的答案选择数字选项的其中一个, 答案以问题的顺序按列表返回
@@ -656,7 +701,7 @@ class GeneralSelectionHandler(BaseHandler):
         response = chain.invoke(
             {
                 'content': self._get_plain_text(),
-                'tips': self._extract_tips(),
+                'tips': _extract_tips(),
                 'choices': question_list,
                 'retry_message': self.retry_messages
             }
@@ -684,7 +729,7 @@ class GeneralSelectionHandler(BaseHandler):
 
 class AudioSelectionHandler(GeneralSelectionHandler):
     def _get_plain_text(self) -> str:
-        return self._parse_audio_text()
+        return _parse_audio_text()
 
     def _post_handle(self, answers) -> bool:
         if self._check_score_with_retry(answers):
@@ -696,7 +741,7 @@ class AudioSelectionHandler(GeneralSelectionHandler):
 
 class VideoSelectionHandler(GeneralSelectionHandler):
     def _get_plain_text(self) -> str:
-        return self._parse_video_text()
+        return _parse_video_text()
 
     def _post_handle(self, answers) -> bool:
         if self._check_score_with_retry(answers):
