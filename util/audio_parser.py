@@ -20,7 +20,7 @@ def from_video(video_path: str) -> str:
     video = None
 
     try:
-        audio_path = f"{video_path.split(".")[-1]}.mp3"
+        audio_path = f"{video_path.removesuffix(".mp4")}.mp3"
 
         if not os.path.exists(audio_path):
             logger.info(f"正在从视频提取音频: {video_path}")
@@ -29,7 +29,7 @@ def from_video(video_path: str) -> str:
             if video.audio is None:
                 raise ValueError(f"视频文件没有音频轨道: {video_path}")
 
-            video.audio.write_audiofile(audio_path, verbose=False, logger=None)
+            video.audio.write_audiofile(audio_path, logger=None)
         text = from_audio(audio_path)
         path_to_video_cache[video_path] = text
         logger.info(f"视频转录完成: {video_path}")
