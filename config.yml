@@ -12,12 +12,12 @@ unipus:
   username: ${UNIPUS_USERNAME} #U校园账号
   password: ${UNIPUS_PASSWORD} #U校园密码
   book: "20000438203" #图书ID
-  offset_page: 30 #一开始的页面往后查找多少页
-  offset_tab: 1
-  offset_task: 0
-  page_wait: 5 #页面做完后等待多久
+  offset_page: 71 #一开始的页面往后查找多少页
+  offset_tab: 0
+  offset_task: 2
+  page_wait: 4 #页面做完后等待多久
   tab_wait: 3 #栏目做完后等待多久
-  task_wait: 3 #任务做完后等待多久
+  task_wait: 2 #任务做完后等待多久
   video_full: true # 视频是否完整播放，如果为true则video_sleep不生效
   video_sleep: 10 #视频停留时间
 

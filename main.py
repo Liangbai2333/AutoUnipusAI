@@ -71,9 +71,11 @@ if __name__ == '__main__':
 
     login(driver)
     access_book_pages(driver)
-    pages = get_pages(driver)[int(config['unipus']['offset_page']):]
+    pages = get_pages(driver)
     logger.info(f"获取书籍所有目录, 偏移量: {config['unipus']['offset_page']}, 页面数: {len(pages)}")
+    pages = pages[int(config['unipus']['offset_page']):]
     for i, page in enumerate(pages):
+        logger.info(f"开始处理第 {i} 页")
         access_page(driver, page)
         auto_answer_questions(
             driver=driver,

@@ -2,7 +2,7 @@ import time
 from time import sleep
 from typing import Optional
 
-from selenium.common import TimeoutException
+from selenium.common import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
@@ -46,6 +46,7 @@ def access_book_pages(driver, book: Optional[str] = None):
     click_button(driver,"div.know-box span.iKnow")
     click_button(driver,"button.ant-btn.ant-btn-primary span")
     logger.info(f"成功进入书籍{book}阅读界面")
+    time.sleep(0.2)
 
 def get_pages(driver) -> list[WebElement]:
     return WebDriverWait(driver, 30).until(
@@ -57,6 +58,7 @@ def access_page(driver, page: WebElement):
     logger.info(f"进入{page_name}页面")
     page.click()
     click_button(driver,"button.ant-btn.ant-btn-primary span")
+    time.sleep(0.2)
 
 
 def auto_answer_questions(driver, page_name, offset_tab, offset_task):
@@ -79,7 +81,7 @@ def auto_answer_questions(driver, page_name, offset_tab, offset_task):
     # 遍历每个标签页
     for tab_index, tab in enumerate(tabs):
         tab_name = tab.find_element(By.TAG_NAME, "div").text
-        logger.info(f"进入第{tab_index + 1}个栏目: {tab_name}")
+        logger.info(f"进入第{tab_index}个栏目: {tab_name}")
         clickable_tab = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable(tab)
         )
@@ -99,7 +101,7 @@ def auto_answer_questions(driver, page_name, offset_tab, offset_task):
         for task_index, task in enumerate(tasks):
             task_result = process_task(driver, task, task_index)
             if not task_result:
-                failed_questions.add(f"{page_name}-{tab_name}-Task{task_index + 1}")
+                failed_questions.add(f"{page_name}-{tab_name}-Task{task_index}")
 
             # 任务间等待
             time.sleep(float(config['unipus']['task_wait']))
@@ -115,9 +117,9 @@ def process_task(driver, task, task_index, max_retries=2):
     """处理单个任务，支持重试机制"""
     for retry in range(max_retries + 1):
         if retry > 0:
-            logger.info(f"进入第{task_index + 1}个任务: {task.text} (Retry {retry})")
+            logger.info(f"进入第{task_index}个任务: {task.text} (Retry {retry})")
         else:
-            logger.info(f"进入第{task_index + 1}个任务: {task.text}")
+            logger.info(f"进入第{task_index}个任务: {task.text}")
 
         # 点击任务
         clickable_task = WebDriverWait(driver, 10).until(
@@ -154,6 +156,10 @@ def process_task(driver, task, task_index, max_retries=2):
             logger.warning(f"处理问题时遇到错误", exc_info=e)
             if retry == max_retries:
                 return False
+        finally:
+            # 确保处理完成
+            click_button(driver, "button.ant-btn.ant-btn-primary span", 0.5)
+
 
     return False
 

@@ -564,73 +564,332 @@ class GeneralDragElementHandler(BaseHandler):
 
         orders: list[int] = response.orders
 
-        actions = ActionChains(driver)
-
-        if len(orders) != len(elements):
-            logger.warning(f"答案数量不匹配，期望{len(elements)}个，实际{len(orders)}个")
-            # 如果数量不匹配，补全或截断
-            if len(orders) < len(elements):
-                orders.extend(list(range(len(orders), len(elements))))
-            else:
-                orders = orders[:len(elements)]
+        # 验证和修复orders
+        orders = self.validate_and_fix_orders(orders, len(elements))
 
         logger.info(f"开始进行拖拽排序, 目标顺序: {orders}")
         logger.info(f"当前选项: {[f'{i}:{choices[i][:20]}...' for i in range(len(choices))]}")
 
-        # 跟踪当前每个位置上的元素索引
-        current_positions = list(range(len(elements)))
+        # 使用改进的拖拽算法
+        success = self.perform_optimized_drag_sort(orders, choices)
 
-        # 按目标位置顺序执行拖拽
-        for target_pos in range(len(orders)):
-            target_element_index = orders[target_pos]
-
-            # 验证索引有效性
-            if target_element_index >= len(elements):
-                logger.warning(f"目标元素索引{target_element_index}超出范围，跳过")
-                continue
-
-            # 找到目标元素当前在哪个位置
-            try:
-                current_pos = current_positions.index(target_element_index)
-            except ValueError:
-                logger.warning(f"未找到元素索引{target_element_index}，跳过")
-                continue
-
-            # 如果已经在正确位置，跳过
-            if current_pos == target_pos:
-                logger.debug(f"元素{target_element_index}已在目标位置{target_pos}")
-                continue
-
-            # 执行拖拽：从current_pos拖到target_pos
-            source_element = elements[current_pos]
-            target_position_element = elements[target_pos]
-
-            logger.info(
-                f"拖拽元素{target_element_index}('{choices[target_element_index][:20]}...'): 从位置{current_pos} -> 位置{target_pos}")
-
-            try:
-                actions.click_and_hold(source_element)
-                actions.pause(0.3)
-                actions.move_to_element(target_position_element)
-                actions.pause(0.3)
-                actions.release()
-                actions.perform()
-                actions.reset_actions()
-
-                # 更新位置映射：模拟拖拽后的位置变化
-                element_being_moved = current_positions[current_pos]
-                current_positions.pop(current_pos)
-                current_positions.insert(target_pos, element_being_moved)
-
-                logger.debug(f"拖拽后位置状态: {current_positions}")
-                time.sleep(0.3)  # 等待动画完成
-
-            except Exception as e:
-                logger.error(f"拖拽操作失败: {e}")
-                break
+        if not success:
+            logger.error("拖拽排序失败")
 
         click_button(driver, "div.question-common-course-page>a.btn")
         return [str(order) for order in orders]
+
+    def validate_and_fix_orders(self, orders: list[int], expected_length: int) -> list[int]:
+        """
+        验证和修复orders数组
+
+        Args:
+            orders: 原始顺序数组
+            expected_length: 期望长度
+
+        Returns:
+            修复后的有效顺序数组
+        """
+        logger.info(f"验证orders: {orders}, 期望长度: {expected_length}")
+
+        # 如果长度不匹配，先调整长度
+        if len(orders) != expected_length:
+            logger.warning(f"Orders长度不匹配: {len(orders)} vs {expected_length}")
+            if len(orders) < expected_length:
+                # 补全缺失的索引
+                missing = set(range(expected_length)) - set(orders)
+                orders.extend(sorted(missing))
+            else:
+                # 截断多余的部分
+                orders = orders[:expected_length]
+
+        # 检查重复值
+        seen = set()
+        duplicates = set()
+        for item in orders:
+            if item in seen:
+                duplicates.add(item)
+            seen.add(item)
+
+        if duplicates:
+            logger.warning(f"发现重复值: {duplicates}")
+            # 重建orders数组
+            valid_orders = []
+            used = set()
+            available = set(range(expected_length))
+
+            for item in orders:
+                if item not in used and 0 <= item < expected_length:
+                    valid_orders.append(item)
+                    used.add(item)
+                    available.remove(item)
+
+            # 补全缺失的索引
+            valid_orders.extend(sorted(available))
+            orders = valid_orders
+
+        # 最终验证
+        if len(orders) != expected_length or set(orders) != set(range(expected_length)):
+            logger.error(f"Orders验证失败，使用默认顺序: {list(range(expected_length))}")
+            orders = list(range(expected_length))
+
+        logger.info(f"修复后的orders: {orders}")
+        return orders
+
+    def perform_optimized_drag_sort(self, target_orders: list[int], choices: list[str]) -> bool:
+        """
+        执行优化的拖拽排序 - 使用逐个调整法
+
+        Args:
+            target_orders: 目标顺序
+            choices: 选项文本列表
+
+        Returns:
+            bool: 是否成功
+        """
+        try:
+            actions = ActionChains(driver)
+            current_order = list(range(len(target_orders)))
+
+            logger.info(f"开始排序，当前顺序: {current_order}, 目标顺序: {target_orders}")
+
+            # 逐个位置调整到正确位置
+            for target_pos in range(len(target_orders)):
+                target_element_idx = target_orders[target_pos]
+                current_pos = current_order.index(target_element_idx)
+
+                if current_pos == target_pos:
+                    logger.debug(f"位置{target_pos}的元素{target_element_idx}已在正确位置")
+                    continue
+
+                logger.info(
+                    f"调整位置{target_pos}: 将元素{target_element_idx}从位置{current_pos}移动到位置{target_pos}")
+
+                # 执行拖拽移动
+                if self.execute_drag_move(current_pos, target_pos, target_element_idx, choices):
+                    # 更新current_order以反映移动
+                    element = current_order.pop(current_pos)
+                    current_order.insert(target_pos, element)
+                    logger.debug(f"移动后当前顺序: {current_order}")
+                    time.sleep(0.6)  # 等待DOM稳定
+                else:
+                    logger.error(f"移动失败: 元素{target_element_idx} 从{current_pos}到{target_pos}")
+                    return False
+
+            # 最终验证
+            return self.verify_final_order(target_orders, choices)
+
+        except Exception as e:
+            logger.error(f"拖拽排序过程中发生错误: {e}")
+            return False
+
+    def execute_drag_move(self, from_pos: int, to_pos: int, element_idx: int, choices: list[str]) -> bool:
+        """
+        执行单次拖拽移动 - 使用更精确的方法
+        """
+        try:
+            # 重新获取当前元素列表
+            current_elements = driver.find_elements(By.CSS_SELECTOR,
+                                                    "div.sortable-list-wrapper>div#sequenceReplyViewItemText")
+
+            if from_pos >= len(current_elements) or to_pos >= len(current_elements):
+                logger.error(f"位置索引超出范围: from={from_pos}, to={to_pos}, total={len(current_elements)}")
+                return False
+
+            source_element = current_elements[from_pos]
+
+            # 等待源元素可点击
+            try:
+                WebDriverWait(driver, 5).until(EC.element_to_be_clickable(source_element))
+            except:
+                logger.warning(f"元素{element_idx}等待超时，尝试直接操作")
+
+            # 滚动到元素可见
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", source_element)
+            time.sleep(0.3)
+
+            # 尝试多种拖拽策略
+            success = False
+
+            # 策略1: 移动到目标位置的精确坐标
+            if not success:
+                success = self.try_precise_coordinate_drag(source_element, from_pos, to_pos, current_elements,
+                                                           element_idx)
+
+            # 策略2: 使用HTML5拖拽API（如果支持）
+            if not success:
+                success = self.try_html5_drag(source_element, current_elements[to_pos], element_idx)
+
+            # 策略3: 传统的move_to_element方法
+            if not success:
+                success = self.try_traditional_drag(source_element, current_elements[to_pos], element_idx)
+
+            if success:
+                logger.debug(f"成功拖拽元素{element_idx} ('{choices[element_idx][:15]}...')")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"拖拽操作失败: {e}")
+            # 确保释放鼠标
+            try:
+                ActionChains(driver).release().perform()
+            except:
+                pass
+            return False
+
+    def try_precise_coordinate_drag(self, source_element, from_pos: int, to_pos: int, elements: list,
+                                    element_idx: int) -> bool:
+        """
+        使用精确坐标进行拖拽
+        """
+        try:
+            logger.debug(f"尝试精确坐标拖拽: 元素{element_idx} 从{from_pos}到{to_pos}")
+
+            # 获取源元素的位置和大小
+            source_rect = source_element.rect
+            source_center_x = source_rect['x'] + source_rect['width'] // 2
+            source_center_y = source_rect['y'] + source_rect['height'] // 2
+
+            # 计算目标位置
+            if to_pos < len(elements):
+                target_element = elements[to_pos]
+                target_rect = target_element.rect
+                target_center_x = target_rect['x'] + target_rect['width'] // 2
+                target_center_y = target_rect['y'] + target_rect['height'] // 2
+
+                # 如果是向上移动，拖到目标元素的上方
+                if from_pos > to_pos:
+                    target_center_y = target_rect['y'] + 5
+                # 如果是向下移动，拖到目标元素的下方
+                else:
+                    target_center_y = target_rect['y'] + target_rect['height'] - 5
+            else:
+                # 拖到最后
+                last_element = elements[-1]
+                last_rect = last_element.rect
+                target_center_x = last_rect['x'] + last_rect['width'] // 2
+                target_center_y = last_rect['y'] + last_rect['height'] + 10
+
+            # 执行拖拽
+            actions = ActionChains(driver)
+            actions.move_to_element_with_offset(source_element, 0, 0)
+            actions.click_and_hold()
+            actions.pause(0.3)
+            actions.move_by_offset(target_center_x - source_center_x, target_center_y - source_center_y)
+            actions.pause(0.3)
+            actions.release()
+            actions.perform()
+
+            time.sleep(0.5)
+            return True
+
+        except Exception as e:
+            logger.debug(f"精确坐标拖拽失败: {e}")
+            try:
+                ActionChains(driver).release().perform()
+            except:
+                pass
+            return False
+
+    def try_html5_drag(self, source_element, target_element, element_idx: int) -> bool:
+        """
+        尝试使用HTML5 drag and drop API
+        """
+        try:
+            logger.debug(f"尝试HTML5拖拽: 元素{element_idx}")
+
+            # JavaScript拖拽代码
+            js_drag_script = """
+            function simulateDragDrop(sourceElement, targetElement) {
+                var dragEvent = new DragEvent('dragstart', {bubbles: true});
+                var dropEvent = new DragEvent('drop', {bubbles: true});
+                var dragOverEvent = new DragEvent('dragover', {bubbles: true});
+
+                sourceElement.dispatchEvent(dragEvent);
+                targetElement.dispatchEvent(dragOverEvent);
+                targetElement.dispatchEvent(dropEvent);
+            }
+            simulateDragDrop(arguments[0], arguments[1]);
+            """
+
+            driver.execute_script(js_drag_script, source_element, target_element)
+            time.sleep(0.5)
+            return True
+
+        except Exception as e:
+            logger.debug(f"HTML5拖拽失败: {e}")
+            return False
+
+    def try_traditional_drag(self, source_element, target_element, element_idx: int) -> bool:
+        """
+        传统的拖拽方法
+        """
+        try:
+            logger.debug(f"尝试传统拖拽: 元素{element_idx}")
+
+            actions = ActionChains(driver)
+            actions.click_and_hold(source_element)
+            actions.pause(0.5)
+            actions.move_to_element(target_element)
+            actions.pause(0.5)
+            actions.release()
+            actions.perform()
+
+            time.sleep(0.5)
+            return True
+
+        except Exception as e:
+            logger.debug(f"传统拖拽失败: {e}")
+            try:
+                ActionChains(driver).release().perform()
+            except:
+                pass
+            return False
+
+    def verify_final_order(self, expected_orders: list[int], original_choices: list[str]) -> bool:
+        """
+        验证最终顺序是否正确
+        """
+        try:
+            time.sleep(1)  # 等待所有动画完成
+
+            final_elements = driver.find_elements(By.CSS_SELECTOR,
+                                                  "div.sortable-list-wrapper>div#sequenceReplyViewItemText")
+            actual_texts = [get_pure_text(elem) for elem in final_elements]
+            expected_texts = [original_choices[i] for i in expected_orders]
+
+            logger.info(f"期望的最终顺序: {expected_orders}")
+            logger.info(f"期望的文本顺序: {[text[:15] + '...' for text in expected_texts]}")
+            logger.info(f"实际的文本顺序: {[text[:15] + '...' for text in actual_texts]}")
+
+            # 计算实际的索引顺序
+            actual_orders = []
+            for actual_text in actual_texts:
+                for i, original_text in enumerate(original_choices):
+                    if actual_text.strip() == original_text.strip():
+                        actual_orders.append(i)
+                        break
+                else:
+                    logger.warning(f"无法匹配文本: {actual_text[:30]}")
+                    return False
+
+            logger.info(f"实际的索引顺序: {actual_orders}")
+
+            if actual_orders == expected_orders:
+                logger.info("拖拽排序完全成功！")
+                return True
+            else:
+                logger.warning("拖拽排序结果与期望不符")
+                # 显示差异
+                for i, (expected, actual) in enumerate(zip(expected_orders, actual_orders)):
+                    if expected != actual:
+                        logger.warning(f"位置{i}: 期望元素{expected}, 实际元素{actual}")
+                return False
+
+        except Exception as e:
+            logger.error(f"验证最终顺序失败: {e}")
+            return False
 
 class AudioDragElementHandler(GeneralDragElementHandler):
     def _get_plain_text(self) -> str:
@@ -720,7 +979,7 @@ class GeneralSelectionHandler(BaseHandler):
                 selection_button = selection_element.find_element(By.CSS_SELECTOR, "span.ant-dropdown-trigger")
                 selection_button.click()
                 time.sleep(0.2)
-                selections = selection_element.find_elements(By.CSS_SELECTOR, "span.input-wrapper li")
+                selections = selection_element.find_elements(By.CSS_SELECTOR, "li")
                 if but := selections[captions[index]]:
                     but.click()
 
