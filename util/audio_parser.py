@@ -20,7 +20,7 @@ def from_video(video_path: str) -> str:
     video = None
 
     try:
-        audio_path = f"{video_path.removesuffix(".mp4")}.mp3"
+        audio_path = f"{os.path.splitext(video_path)[0]}.mp3"
 
         if not os.path.exists(audio_path):
             logger.info(f"正在从视频提取音频: {video_path}")
